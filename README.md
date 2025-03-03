@@ -1,3 +1,3 @@
-# Quantization On Edge
+# Quantization on Edge
 
 This project aims to implement and evaluate quantization techniques on machine learning models running on Jetson Nano edge devices.
