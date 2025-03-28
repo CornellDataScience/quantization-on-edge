@@ -1,10 +1,8 @@
 import tensorflow as tf
 import tf2onnx
 import onnx
-import os
 import json
 from onnx import numpy_helper
-import subprocess as subprocess
 
 
 def convert_tf_to_onnx(saved_model_path, output_path):
@@ -13,7 +11,6 @@ def convert_tf_to_onnx(saved_model_path, output_path):
     input_layer = tf_model.inputs[0]
 
     input_signature = [tf.TensorSpec(input_layer.shape, input_layer.dtype, name=input_layer.name)]
-    # print(input_signature)
 
     tf_model.output_names = ["output"]
 
@@ -36,9 +33,10 @@ def extract_unquantized_parameters(onnx_model, output_path):
     print(f"Parameters extracted and saved to: {output_path}")
 
 if __name__ == "__main__":
-    saved_model_path = "model.keras"
-    onnx_model_path = "model.onnx"
-    formatted_parameters_file = "unquantized_params.json"
+    saved_model_path = "models/quantized_model.keras"
+    onnx_model_path = "models/qq_model.onnx"
+    formatted_parameters_file = "models/quantized_model_params.json"
 
-    onnx_model = convert_tf_to_onnx(saved_model_path, onnx_model_path)
+    # onnx_model = convert_tf_to_onnx(saved_model_path, onnx_model_path)
+    onnx_model = onnx.load("models/quantized_model.onnx")
     extract_unquantized_parameters(onnx_model, formatted_parameters_file)
