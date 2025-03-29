@@ -5,24 +5,35 @@ import numpy as np
 from onnx import numpy_helper
 
 def quantize(onnx_model_path, quantized_params_path, output_model_path):
+    '''
+    Quantize ONNX model and save quantized model
+
+    Input
+    -----
+    onnx_model_path: file path of ONNX model to quantize
+    quantized_params_path: file path of quantized parameter, scalar, and zero point values used to quantize
+    output_model_path: file path to save quantized model to
+    
+    Output
+    -----
+    Saves quantized model to output_model_path 
+    '''
     # Load unquantized model
     model = onnx.load(onnx_model_path)
     graph = model.graph
     
     # Load JSON
     with open(quantized_params_path) as f:
-        params = json.load(f) 
-
-    print(model.graph.initializer[0])
+        params = json.load(f)
     
     # Iterate through params, replace with quantized from JSON
     new_initializers = []
     for tensor in graph.initializer:
         if tensor.name in params:
             # Retrieve quantization params from JSON
-            quantized_data = np.array(params[tensor.name]["quantized"], dtype=np.uint8)
-            scale = np.array([params[tensor.name]["scale"]], dtype=np.uint8)
-            zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.uint8)
+            quantized_data = np.array(params[tensor.name]["quantized"], dtype=np.int8)
+            scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
+            zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.int8)
 
             # Convert to ONNX tensors
             quantized_initializer = numpy_helper.from_array(quantized_data, tensor.name)
