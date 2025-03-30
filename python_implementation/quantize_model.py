@@ -55,7 +55,7 @@ def quantize(onnx_model_path, quantized_params_path, output_model_path):
 
 
 if __name__ == "__main__":
-    onnx_model_path = "../models/model.onnx"
-    quantized_params_path = "../params/quantized_params.json"
-    output_model_path = "../models/quantized_model.onnx"
+    onnx_model_path = "models/model.onnx"
+    quantized_params_path = "params/quantized_params.json"
+    output_model_path = "models/quantized_model.onnx"
     quantize(onnx_model_path, quantized_params_path, output_model_path)

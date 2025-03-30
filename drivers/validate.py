@@ -45,10 +45,10 @@ class MnistCalibrationDataReader(CalibrationDataReader):
         return len(self.calibration_images)
 
 if __name__ == "__main__":
-    onnx_model_path = "../models/model.onnx"
-    model_prep_path = "../models/model_prep.onnx"
-    validation_model_path = "../models/validation_model.onnx"
-    validation_params_path = "../params/validation_quantized_params.json"
+    onnx_model_path = "models/model.onnx"
+    model_prep_path = "models/model_prep.onnx"
+    validation_model_path = "models/validation_model.onnx"
+    validation_params_path = "params/validation_quantized_params.json"
 
     # create CalibrationDataReader with dataset of size 10
     calibration_data_reader = MnistCalibrationDataReader(10)

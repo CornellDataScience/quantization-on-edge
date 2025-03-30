@@ -36,8 +36,8 @@ def quantize_parameters(input_path, output_path, bit_size):
         json.dump(quantized_params, f, indent=2)
 
 if __name__ == "__main__":
-    input_json = "../params/unquantized_params.json"
-    output_json = "../params/quantized_params.json" 
+    input_json = "params/unquantized_params.json"
+    output_json = "params/quantized_params.json" 
     bit_size = 8
     quantize_parameters(input_json, output_json, bit_size)
     print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")
