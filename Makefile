@@ -1,11 +1,11 @@
+.PHONY: all clean setup quantize_params quantize_model validate
+
 all: setup quantize_params quantize_model
 
 clean:
 	rm -f models/*.onnx
 	rm -f models/*.keras
 	rm -f params/*.json
-
-.PHONY: clean all setup quantize_params quantize_model
 
 # Create dependencies if missing
 models/model.keras:
@@ -16,7 +16,6 @@ params/unquantized_params.json:
 	
 params/quantized_params.json:
 	python3 python_implementation/quantize_parameters.py
-
 
 # Functional commands
 setup: models/model.keras
