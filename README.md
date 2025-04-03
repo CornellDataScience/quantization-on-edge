@@ -1,12 +1,19 @@
 # Quantization on Edge
 
-This project aims to implement and evaluate quantization techniques on machine learning models running on Jetson Nano edge devices.
+This project aims to implement and evaluate quantization techniques on machine learning models deployed to Jetson Nano edge devices.
 
 ### To Run
-Run model.ipynb
 
-`python setup.py`
+Install dependencies: `pip install -r requirements.txt`
 
-`g++ -std=c++17 -o output c++_implementation/quantize_parameters.cpp`
+Create quantized model from scratch: `make`
 
-`./output`
+Validate quantized parameters: `make validate`
+
+Clear `models/` and `params/` directories: `make clean`
+
+### Quantization Flow
+
+1. Extract unquantized parameters: `make setup`
+2. Calculate quantized parameters: `make quantize_params`
+3. Quantize model: `make quantize_model`
