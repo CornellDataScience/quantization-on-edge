@@ -27,8 +27,10 @@ def quantize_parameters(input_path, output_path, bit_size):
         
         quantized_params[param_name] = {
             "quantized": Q.tolist(),
-            "scale": float(S),
-            "zero_point": float(Z),
+            "weight_scale": float(S),
+            "weight_zero_point": float(Z),
+            "activation_scale": 1, # FIXME: placeholder value
+            "activation_zero_point": 0, # FIXME: placeholder value
             "bit_width": bit_size
         }
 

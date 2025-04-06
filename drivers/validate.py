@@ -39,7 +39,7 @@ class MnistCalibrationDataReader(CalibrationDataReader):
 
         self.current_item += 1
 
-        return {"input_layer_1": image}
+        return {"input_layer": image}
 
     def __len__(self) -> int:
         return len(self.calibration_images)
@@ -61,6 +61,13 @@ if __name__ == "__main__":
 
     # load quantized_model
     quantized_model = onnx.load(validation_model_path)
+    
+    # print(quantized_model)
+
+    # print('** nodes **')
+    # for node in quantized_model.graph.node:
+    #     print("name=%r type=%r input=%r output=%r" % (
+    #         node.name, node.op_type, node.input, node.output))
 
     # parse parameters from quantized validation model into JSON file
     extract_parameters(quantized_model, validation_params_path)
