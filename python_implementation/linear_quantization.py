@@ -2,17 +2,17 @@ import numpy as np
 
 def compute_scale_and_zero_point_values(r_min, r_max, bit_size):
     '''
-    (description)
+    Computes the scale (S) and zero-point (Z) values required for linear quantization.
 
     Input
     -----
-    r_min: 
-    r_max: 
-    bit_size: 
+    r_min : minimum value in the data range.
+    r_max : maximum value in the data range.
+    bit_size : number of bits to represent quantized values.
     
     Output
     -----
-    Returns 
+    Returns a tuple (S,Z)
     '''
     if r_min == r_max:
         return 1.0, 0
@@ -24,16 +24,16 @@ def compute_scale_and_zero_point_values(r_min, r_max, bit_size):
 
 def linear_quantize_data(data, bit_size):
     '''
-    (description)
+    Quantizes a floating-point numpy array or list to a fixed-point representation using linear quantization.
 
     Input
     -----
-    data: 
-    bit_size: 
-    
+    data : The input data containing floating-point values to be quantized.
+    bit_size : The number of bits used for quantization.
+
     Output
     -----
-    Returns 
+    Returns a tuple (Q,S,Z)
     '''
     data = np.asarray(data, dtype=np.float32)
     rmin, rmax = np.min(data), np.max(data)
@@ -45,17 +45,17 @@ def linear_quantize_data(data, bit_size):
 
 def linear_dequantize_data(data, S, Z):
     '''
-    (description)
+    Dequantize quantized data back to the original floating-point representation using the scale and zero-point.
 
     Input
     -----
-    data:
-    S:
-    Z:
-    
+    data : The quantized data to be dequantized.
+    S : The scale factor used during quantization.
+    Z : The zero-point (offset) used during quantization.
+
     Output
     -----
-    Returns
+    Returns the dequantized data as a floating-point numpy array.
     '''
     data = np.asarray(data)
     return (data - Z) * S
