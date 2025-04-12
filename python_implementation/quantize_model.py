@@ -41,7 +41,7 @@ def quantize(onnx_model_path, quantized_params_path, output_model_path):
             quantized_data = np.array(params[tensor.name]["quantized"], dtype=np.int8)
             weight_scale = np.array([params[tensor.name]["weight_scale"]], dtype=np.float32)
             weight_zero_point = np.array([params[tensor.name]["weight_zero_point"]], dtype=np.int8)
-            activation_scale = np.array([params[tensor.name]["activation_scale"]], dtype=np.float32)
+            activation_scale = np.array([params[tensor.name]["activation_scale"]], dtype=np.float32) # Need to move these to become associated with nodes, not initializers
             activation_zero_point = np.array([params[tensor.name]["activation_zero_point"]], dtype=np.int8)
 
             # Convert to ONNX tensors
@@ -127,7 +127,7 @@ class SymmetricMatMulAddFusion(OpRun):
 
     Output
     -----
-    Returns quantized result of matrix multiplication and bias addition
+    Returns unquantized result of matrix multiplication and bias addition
     '''
 
     op_domain = "quantize"
@@ -136,7 +136,9 @@ class SymmetricMatMulAddFusion(OpRun):
         x = x.copy()
         W = W.copy()
         b = b.copy()
-        return (s_W * s_x * np.matmul(W, x) + b)
+        return (s_W * s_x * np.matmul(W, x) + b) # currently returns float32; all final operations should be int8
+                                                 # calibration model should be float32 * int8
+                                                 # consider fusing with relu to avoid extra quantization/dequantization
 
 
 if __name__ == "__main__":
