@@ -1,48 +1,6 @@
 import onnx
-from onnxruntime.quantization import quantize_static, quant_pre_process, CalibrationDataReader
-from setup import extract_parameters
-import tensorflow_datasets as tfds
-import numpy as np
-
-class MnistCalibrationDataReader(CalibrationDataReader):
-    '''
-    Create custom CalibrationDataReader for MNIST dataset
-
-    Input
-    -----
-    num: number of training examples to calibrate on
-    
-    Output
-    -----
-    Returns MnistCalibrationDataReader object
-    '''
-    def __init__(self, num):
-        super().__init__()
-
-        # Load dataset and extract `num` training examples
-        dataset = tfds.load("mnist", shuffle_files=True)
-        dataset_subset = dataset["train"].take(num)
-        self.calibration_images = [np.array(item["image"]) for item in dataset_subset]
-
-        self.current_item = 0
-
-    def get_next(self) -> dict:
-        '''
-        Generate the input data dict in the input format to ONNX model
-        '''
-        if self.current_item == len(self.calibration_images):
-            return None  # None signals that the calibration is finished
-
-        image = self.calibration_images[self.current_item]
-        image = np.reshape(image, (1, 28, 28))
-        image = image.astype("float32")
-
-        self.current_item += 1
-
-        return {"input_layer": image}
-
-    def __len__(self) -> int:
-        return len(self.calibration_images)
+from onnxruntime.quantization import quant_pre_process, quantize_static
+from utils import MnistCalibrationDataReader, extract_parameters
 
 if __name__ == "__main__":
     onnx_model_path = "models/model.onnx"
@@ -50,8 +8,11 @@ if __name__ == "__main__":
     validation_model_path = "models/validation_model.onnx"
     validation_params_path = "params/validation_quantized_params.json"
 
+    model = onnx.load(onnx_model_path)
+    input_layer_name = model.graph.input[0].name
+
     # create CalibrationDataReader with dataset of size 10
-    calibration_data_reader = MnistCalibrationDataReader(10)
+    calibration_data_reader = MnistCalibrationDataReader(input_layer_name, 10)
     
     # prepare model for quantization
     quant_pre_process(onnx_model_path, model_prep_path)
