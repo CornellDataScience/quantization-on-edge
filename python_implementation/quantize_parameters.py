@@ -4,17 +4,17 @@ from linear_quantization import linear_quantize_data
 
 def quantize_parameters(input_path, output_path, bit_size):
     '''
-    (description)
+    Quantize model parameters stored in a JSON file and save the quantized parameters to another JSON file.
 
     Input
     -----
-    input_path: 
-    output_path: 
-    bit_size: 
+    input_path : file path to the input JSON file containing unquantized parameters
+    output_path : file path where the quantized parameters JSON file will be saved
+    bit_size : number of bits used for quantization
     
     Output
     -----
-    Returns 
+    Writes the quantized parameters to the specified output file. No value is returned.
     '''
     with open(input_path, 'r') as f:
         params = json.load(f)
