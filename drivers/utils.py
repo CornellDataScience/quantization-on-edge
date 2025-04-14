@@ -117,7 +117,7 @@ def extract_activations(onnx_model, output_path):
     Saves (unquantized or quantized) model activations to output_path
     '''
     original_outputs = [x.name for x in onnx_model.graph.output]
-    node_output_pairs = []
+    node_output_pairs = [("Quantize", "quantized_input")] # Create stub for model input
 
     for node in onnx_model.graph.node:
         for output in node.output:
@@ -129,7 +129,8 @@ def extract_activations(onnx_model, output_path):
             node_output_pairs.append((node.name, output))
 
     session = ort.InferenceSession(onnx_model.SerializeToString())
-    # output_names = [x.name for x in session.get_outputs()]
+
+    output_names = [pair[1] for pair in node_output_pairs]
     print("Model node-output pairs (including intermediate activations):")
     for pair in node_output_pairs:
         print(" -", pair)
@@ -144,8 +145,9 @@ def extract_activations(onnx_model, output_path):
         if sample is None:
             break
 
-        output_names = node_output_pairs[:][1]
         ort_outs = session.run(output_names, sample)
+        ort_outs.append(np.flatten(sample)) # Add model input to outputs
+
         for pair, act in zip(node_output_pairs, ort_outs):
             activation_distributions[pair].append(act)
 
