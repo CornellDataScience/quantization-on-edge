@@ -115,11 +115,28 @@ def quantize(onnx_model_path, quantized_activations_path, output_model_path):
     added_nodes = []
     removed_nodes = []
 
-    prev_node = None
-    for i,node in enumerate(graph.node):
+    
+    graph_nodes = graph.node
+
+    # Add node to quantize model input
+    input_name = graph.input[0].name
+    s_x = input_name + "_activation_scalar"
+    Z = input_name + "_activation_zero_point"
+    output_name = "quantized_input"
+    quantize_node = helper.make_node(name="QuantizeLayer", 
+                                    op_type='Quantize', 
+                                    inputs=[input_name, s_x, Z], 
+                                    outputs=[output_name], 
+                                    domain="quantize")
+    
+    added_nodes.append(quantize_node)
+
+    prev_node = quantize_node
+    
+    for i,node in enumerate(graph_nodes):
         if node.op_type == "MatMul":
             matmul_node = node
-            add_node = graph.node[i + 1]
+            add_node = graph_nodes[i + 1]
 
             x = matmul_node.input[0]
             W = matmul_node.input[1]
@@ -127,22 +144,47 @@ def quantize(onnx_model_path, quantized_activations_path, output_model_path):
             s_x = prev_node.name + "_activation_scale"
             s_W = matmul_node.name + "_scale"
 
-            output = add_node.output[0]
+            if i < len(graph_nodes) - 1:
+                relu_node = graph_nodes[i + 2]
 
-            matmul_add_fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "SymmMatMulAddFusion", 
-                                                     op_type='SymmMatMulAddFusion', 
-                                                     inputs=[x, W, b, s_x, s_W], 
-                                                     outputs=[output], 
-                                                     domain="quantize")
-            
+                s_R = relu_node.name + "_activation_scale"
+                output = relu_node.output[0]
+                
+                matmul_add_relu_fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "SymmMatMulAddReLUFusion", 
+                                                        op_type='SymmMatMulAddReLUFusion', 
+                                                        inputs=[x, W, b, s_x, s_W, s_R], 
+                                                        outputs=[output], 
+                                                        domain="quantize")
+                added_nodes.append(matmul_add_relu_fused_node)
+                removed_nodes.append(relu_node)
+            else: # Node is the original output node
+                output = "quantized_output"
 
-            added_nodes.append(matmul_add_fused_node)
-
+                matmul_add_fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "SymmMatMulAddFusion", 
+                                                        op_type='SymmMatMulAddFusion', 
+                                                        inputs=[x, W, b, s_x, s_W], 
+                                                        outputs=[output], 
+                                                        domain="quantize")
+                added_nodes.append(matmul_add_fused_node)
+                
             removed_nodes.append(matmul_node)
             removed_nodes.append(add_node)
-
+                
         prev_node = node
 
+    # Add node to dequantize model output
+    input_name = "quantized_output"
+    s_x = prev_node.name + "_activation_scalar"
+    Z = prev_node.name + "_activation_zero_point"
+    output_name = "output"
+    dequantize_node = helper.make_node(name="DeuantizeLayer", 
+                                    op_type='Dequantize', 
+                                    inputs=[input_name, s_x, Z], 
+                                    outputs=[output_name], 
+                                    domain="quantize")
+    added_nodes.append(dequantize_node)
+
+    # Replace nodes in graph
     for node in removed_nodes:
         graph.node.remove(node)
         
@@ -219,16 +261,52 @@ class SymmMatMulAddReLUFusion(OpRun):
 
 
 class Quantize(OpRun):
+    '''
+    Performs 8-bit linear quantization
+
+    Input
+    -----
+    x: name of model input initializer
+    s_x: name of scalar initializer of input
+    Z: name of zero point initializer of input
+
+    Output
+    -----
+    Returns quantized initializer
+    '''
     op_domain = "quantize"
     
-    def _run(self):
-        # TODO implement quantize node
-        return
+    def _run(self, x, s_x, Z):
+        x = x.copy()
+        bit_size = 8
+        return np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1)
+    
+    
+class Dequantize(OpRun):
+    '''
+    Performs 8-bit linear dequantization
+
+    Input
+    -----
+    x: name of activation initializer of previous layer
+    s_x: name of activation scalar initializer of previous layer
+    Z: name of zero point initializer of previous layer
+
+    Output
+    -----
+    Returns dequantized initializer
+    '''
+    op_domain = "quantize"
+
+    def _run(self, x, s_x, Z):
+        x = x.copy()
+        return s_x * (x - Z)
 
 
 if __name__ == "__main__":
     onnx_model_path = "models/model.onnx"
     quantized_params_path = "params/quantized_params.json"
+    quantized_activations_path = "activations/quantized_activations.json"
     prep_model_path = "models/prep_model.onnx"
     output_model_path = "models/quantized_model.onnx"
     # quantize(onnx_model_path, quantized_params_path, output_model_path)

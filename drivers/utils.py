@@ -130,7 +130,7 @@ def extract_activations(onnx_model, output_path):
 
     session = ort.InferenceSession(onnx_model.SerializeToString())
 
-    output_names = [pair[1] for pair in node_output_pairs]
+    output_names = [pair[1] for pair in node_output_pairs[1:]] # Do not include stub in inference session outputs
     print("Model node-output pairs (including intermediate activations):")
     for pair in node_output_pairs:
         print(" -", pair)
@@ -139,14 +139,15 @@ def extract_activations(onnx_model, output_path):
 
     input_layer_name = onnx_model.graph.input[0].name
 
-    reader = MnistCalibrationDataReader(input_layer_name, 10)
+    reader = MnistCalibrationDataReader(input_layer_name, 1000)
     for _ in range(len(reader)):
         sample = reader.get_next()
         if sample is None:
             break
 
-        ort_outs = session.run(output_names, sample)
-        ort_outs.append(np.flatten(sample)) # Add model input to outputs
+        ort_outs = [sample[input_layer_name].flatten()] # Add model input to outputs
+        ort_outs.extend(session.run(output_names, sample))
+        
 
         for pair, act in zip(node_output_pairs, ort_outs):
             activation_distributions[pair].append(act)
