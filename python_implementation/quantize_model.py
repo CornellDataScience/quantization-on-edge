@@ -44,11 +44,9 @@ def prepare(onnx_model_path, quantized_params_path, output_prep_model_path):
 
                 # Convert to ONNX tensors
                 quantized_initializer = numpy_helper.from_array(quantized_data, tensor.name)
-                scale_initializer = numpy_helper.from_array(scale, f"{tensor.name}_scale")
-                zero_point_initializer = numpy_helper.from_array(zero_point, f"{tensor.name}_zero_point")
 
                 # Add quantized initializer and scale/zero-point tensors
-                new_initializers.extend([quantized_initializer, scale_initializer, zero_point_initializer])
+                new_initializers.extend([quantized_initializer])
 
                 print(f"Quantized {tensor.name} with scale={scale[0]}, zero_point={zero_point[0]}")
             else:
