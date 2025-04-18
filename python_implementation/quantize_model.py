@@ -5,6 +5,7 @@ import json
 import numpy as np
 from onnx import numpy_helper, helper
 from onnx.reference.op_run import OpRun
+import sys
 
 def prepare(onnx_model_path, quantized_params_path, output_prep_model_path):
     '''
@@ -18,7 +19,7 @@ def prepare(onnx_model_path, quantized_params_path, output_prep_model_path):
     
     Output
     -----
-    Saves prepared model to output_model_path
+    Saves prepared model to output_prep_model_path
     '''
     model = onnx.load(onnx_model_path)
     graph = model.graph
@@ -67,14 +68,15 @@ def prepare(onnx_model_path, quantized_params_path, output_prep_model_path):
     onnx.save(model, output_prep_model_path)
     print(f"Prep model saved to {output_prep_model_path}")
 
-def quantize(onnx_model_path, quantized_activations_path, output_model_path):
+def quantize(prep_model_path, quantized_activations_path, quantized_biases, output_model_path):
     '''
     Quantize ONNX model and save quantized model
 
     Input
     -----
-    onnx_model_path: file path of ONNX model to quantize
+    prep_model_path: file path of ONNX model to quantize
     quantized_activations_path: file path of scalar and zero point values for prepped model activations
+    quantized_biases_path: file path of quantized bias, scalar, and zero point values used to quantize
     output_model_path: file path to save quantized model to
     
     Output
@@ -82,7 +84,7 @@ def quantize(onnx_model_path, quantized_activations_path, output_model_path):
     Saves quantized model to output_model_path 
     '''
     # Load unquantized model
-    model = onnx.load(onnx_model_path)
+    model = onnx.load(prep_model_path)
     graph = model.graph
 
     print('** Original nodes **')
@@ -302,10 +304,20 @@ class Dequantize(OpRun):
 
 
 if __name__ == "__main__":
-    onnx_model_path = "models/model.onnx"
-    quantized_params_path = "params/quantized_params.json"
-    quantized_activations_path = "activations/quantized_activations.json"
-    prep_model_path = "models/prep_model.onnx"
-    output_model_path = "models/quantized_model.onnx"
-    # quantize(onnx_model_path, quantized_params_path, output_model_path)
-    prepare(onnx_model_path, quantized_params_path, prep_model_path)
+    if len(sys.argv) != 2:
+        print("Expected quantization mode argument.")
+    else:
+        mode = sys.argv[1]
+
+        if mode == "prep":
+            onnx_model_path = "models/model.onnx"
+            quantized_params_path = "params/quantized_params.json"
+            output_prep_model_path = "models/prep_model.onnx"
+            prepare(onnx_model_path, quantized_params_path, output_prep_model_path)
+        elif mode == "full":
+            prep_model_path = "models/prep_model.onnx"
+            quantized_activations_path = "activations/quantized_activations.json"
+            quantized_biases_path = "biases/quantized_biases.json"
+            output_model_path = "models/quantized_model.onnx"
+            quantize(prep_model_path, quantized_activations_path, quantized_biases_path, output_model_path)
+    

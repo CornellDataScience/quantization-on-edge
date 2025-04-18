@@ -1,4 +1,4 @@
-.PHONY: all clean setup quantize_params quantize_model validate
+.PHONY: all clean setup quantize_params prep_model quantize_model validate
 
 all: setup quantize_params quantize_model
 
@@ -24,8 +24,11 @@ setup: models/model.keras
 quantize_params: params/unquantized_params.json
 	python3 python_implementation/quantize_parameters.py
 
-quantize_model: params/quantized_params.json
-	python3 python_implementation/quantize_model.py
+prep_model: params/quantized_params.json
+	python3 python_implementation/quantize_model.py prep
+
+quantize_model: activations/quantized_activations.json biases/quantized_biases.json
+	python3 python_implementation/quantize_model.py full
 
 validate: models/model.onnx
 	python3 drivers/validate.py
