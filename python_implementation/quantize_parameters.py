@@ -48,3 +48,4 @@ if __name__ == "__main__":
     bit_size = 8
     quantize_parameters(input_json, output_json, bit_size)
     print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")
+    

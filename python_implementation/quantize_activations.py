@@ -26,16 +26,15 @@ def quantize_activations(input_path, output_path, bit_size):
         _, S, Z = linear_quantize_data(activation_array, bit_size)
         
         quantized_activations[activation_name] = {
-            "activation_scale": float(S),
-            "activation_zero_point": int(Z),
-            "bit_width": bit_size
+            "scale": float(S),
+            "zero_point": int(Z)
         }
 
     with open(output_path, 'w') as f:
         json.dump(quantized_activations, f, indent=2)
 
 if __name__ == "__main__":
-    input_json = "activations/unquantized_activations.json"
+    input_json = "activations/prep_activations.json"
     output_json = "activations/quantized_activations.json" 
     bit_size = 8
     quantize_activations(input_json, output_json, bit_size)
