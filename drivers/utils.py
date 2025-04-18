@@ -109,7 +109,7 @@ def extract_activations(onnx_model, output_path):
 
     Input
     -----
-    onnx_model: ONNX model to extract parameters from
+    onnx_model: ONNX model to extract activations from
     output_path: JSON file path to save to
     
     Output
@@ -117,6 +117,7 @@ def extract_activations(onnx_model, output_path):
     Saves (unquantized or quantized) model activations to output_path
     '''
     original_outputs = [x.name for x in onnx_model.graph.output]
+    node_output_pairs = [("Quantize", "quantized_input")] # Create stub for model input
 
     for node in onnx_model.graph.node:
         for output in node.output:
@@ -125,35 +126,42 @@ def extract_activations(onnx_model, output_path):
                 onnx_model.graph.output.append(new_output)
                 original_outputs.append(output)
 
-    session = ort.InferenceSession(onnx_model.SerializeToString())
-    output_names = [x.name for x in session.get_outputs()]
-    print("Model outputs (including intermediate activations):")
-    for name in output_names:
-        print(" -", name)
+            node_output_pairs.append((node.name, output))
 
-    activation_distributions = {name: [] for name in output_names}
+    session = ort.InferenceSession(onnx_model.SerializeToString())
+
+    output_names = [pair[1] for pair in node_output_pairs[1:]] # Do not include stub in inference session outputs
+    print("Model node-output pairs (including intermediate activations):")
+    for pair in node_output_pairs:
+        print(" -", pair)
+
+    activation_distributions = {pair: [] for pair in node_output_pairs}
 
     input_layer_name = onnx_model.graph.input[0].name
 
-    reader = MnistCalibrationDataReader(input_layer_name, 10)
+    reader = MnistCalibrationDataReader(input_layer_name, 1000)
     for _ in range(len(reader)):
         sample = reader.get_next()
         if sample is None:
             break
-        ort_outs = session.run(output_names, sample)
-        for name, act in zip(output_names, ort_outs):
-            activation_distributions[name].append(act)
+
+        ort_outs = [sample[input_layer_name].flatten()] # Add model input to outputs
+        ort_outs.extend(session.run(output_names, sample))
+        
+
+        for pair, act in zip(node_output_pairs, ort_outs):
+            activation_distributions[pair].append(act)
 
     aggregated_activations = {}
-    for name, activations in activation_distributions.items():
+    for pair, activations in activation_distributions.items():
         try:
-            aggregated_activations[name] = np.concatenate(
+            aggregated_activations[pair] = np.concatenate(
                 [a.flatten() for a in activations], axis=0
             ).astype(np.float32)
         except Exception as e:
-            print(f"Error concatenating activations for {name}: {e}")
+            print(f"Error concatenating activations for {pair}: {e}")
 
-    serialized_activations = {name: acts.tolist() for name, acts in aggregated_activations.items()}
+    serialized_activations = {pair[0]: acts.tolist() for pair, acts in aggregated_activations.items()} # Associate activations with nodes instead of initializers
 
     with open(output_path, 'w') as f:
         json.dump(serialized_activations, f, indent=2)

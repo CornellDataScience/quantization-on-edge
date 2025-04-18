@@ -4,7 +4,7 @@ from utils import MnistCalibrationDataReader, extract_parameters
 
 if __name__ == "__main__":
     onnx_model_path = "models/model.onnx"
-    model_prep_path = "models/model_prep.onnx"
+    model_prep_path = "models/validation_prep_model.onnx"
     validation_model_path = "models/validation_model.onnx"
     validation_params_path = "params/validation_quantized_params.json"
 

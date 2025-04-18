@@ -23,16 +23,21 @@ def quantize_parameters(input_path, output_path, bit_size):
     
     for param_name, param_value in params.items():
         param_array = np.array(param_value, dtype=np.float32)
-        Q, S, Z = linear_quantize_data(param_array, bit_size)
         
-        quantized_params[param_name] = {
-            "quantized": Q.tolist(),
-            "weight_scale": float(S),
-            "weight_zero_point": float(Z),
-            "activation_scale": 1, # FIXME: placeholder value
-            "activation_zero_point": 0, # FIXME: placeholder value
-            "bit_width": bit_size
-        }
+        if "ReadVariableOp" in param_name and "MatMul" in param_name: # Only quantize weights
+            Q, S, Z = linear_quantize_data(param_array, bit_size)
+            
+            quantized_params[param_name] = {
+                "data": Q.tolist(),
+                "scale": float(S),
+                "zero_point": float(Z),
+                "to_quantize": True
+            }
+        else:
+            quantized_params[param_name] = {
+                "data": param_array.tolist(),
+                "to_quantize": False
+            }
 
     with open(output_path, 'w') as f:
         json.dump(quantized_params, f, indent=2)
