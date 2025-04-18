@@ -1,0 +1,1 @@
+Stub file to create GitHub directory structure
