@@ -1,3 +1,7 @@
+'''
+Setup: loads in model and extracts parameters (weights)
+'''
+import onnx
 from utils import convert_tf_to_onnx, extract_parameters
 
 if __name__ == "__main__":
