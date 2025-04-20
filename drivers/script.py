@@ -1,149 +1,87 @@
-# from utils import convert_onnx_to_tf
-# import tensorflow as tf
-# import numpy as np
-# from onnx_tf.backend import prepare
-# import onnx
-
-
-# def convert_onnx_to_tf(onnx_path, tf_output_path):
-#     '''
-#     Convert ONNX model to TensorFlow SavedModel format
-
-#     Input
-#     -----
-#     onnx_path: file path of ONNX model
-#     tf_output_path: directory to save the TensorFlow SavedModel
-    
-#     Output
-#     -----
-#     Returns the TensorFlow model object
-#     '''
-#     # Load ONNX model
-#     onnx_model = onnx.load(onnx_path)
-
-#     # Convert ONNX to TensorFlow
-#     tf_rep = prepare(onnx_model)
-#     tf_rep.export_graph(tf_output_path)
-
-#     print(f"TensorFlow model saved to: {tf_output_path}")
-#     return tf.keras.models.load_model(tf_output_path)
-
-# def convert_tf_to_tflite(saved_model_dir, tflite_output_path):
-#     converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
-#     tflite_model = converter.convert()
-#     with open(tflite_output_path, "wb") as f:
-#         f.write(tflite_model)
-#     print(f"TFLite model saved to: {tflite_output_path}")
-
-# model = convert_onnx_to_tf("models/model.onnx", "converted_tf_model")
-# convert_tf_to_tflite("converted_tf_model", "converted_model.tflite")
-
-# interpreter = tf.lite.Interpreter(model_path="converted_model.tflite")
-# interpreter.allocate_tensors()
-
-# input_details = interpreter.get_input_details()
-# output_details = interpreter.get_output_details()
-
-# (_, _), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
-# x_sample = x_test[0] 
-# y_true = y_test[0]
-
-# x_input = x_sample.astype(np.float32) / 255.0  
-# x_input = np.expand_dims(x_input, axis=0)  
-# if len(input_details[0]['shape']) == 4:
-#     x_input = np.expand_dims(x_input, axis=-1)  
-    
-
-# interpreter.set_tensor(input_details[0]['index'], x_input)
-
-# interpreter.invoke()
-
-# output_data = interpreter.get_tensor(output_details[0]['index'])
-# predicted_label = np.argmax(output_data)
-
-# print(f"Predicted label: {predicted_label}")
-# print(f"True label: {y_true}")
-
-
-
+import onnx2tf
 import tensorflow as tf
+import tensorflow_datasets as tfds
+import matplotlib.pyplot as plt
 import numpy as np
-import onnx
-from onnx_tf.frontend import convert
 
-
-def convert_onnx_to_tf(onnx_path, tf_output_path):
-    """
-    Convert ONNX model to TensorFlow SavedModel format
+def convert_onnx_to_tf(onnx_path, output_path):
+    '''
+    Convert saved ONNX model to TensorFlow formats
 
     Input
     -----
-    onnx_path: file path of ONNX model
-    tf_output_path: directory to save the TensorFlow SavedModel
-
+    onnx_path: file path of saved model in .onnx format
+    output_path: folder path of saved model in .keras and .tflite formats
+    
     Output
     -----
-    Returns the TensorFlow model object
-    """
-    # Load ONNX model
-    onnx_model = onnx.load(onnx_path)
-
-    # Convert ONNX to TensorFlow (returns a tf.Module)
-    tf_model = convert(onnx_model)
-
-    # Save as TensorFlow SavedModel
-    tf.saved_model.save(tf_model, tf_output_path)
-
-    print(f"TensorFlow model saved to: {tf_output_path}")
-    return tf_model
+    Saves model in TensorFlow formats to output_path
+    '''
+    onnx2tf.convert(input_onnx_file_path=onnx_path, output_keras_v3=True, output_folder_path=output_path)
 
 
-def convert_tf_to_tflite(saved_model_dir, tflite_output_path):
-    """
-    Convert TensorFlow SavedModel to TFLite format and save it
+def perform_inference(tflite_path):
+    '''
+    Perform inference on MNIST dataset using saved TFLite model and compute accuracy of predictions
 
     Input
     -----
-    saved_model_dir: path to the SavedModel directory
-    tflite_output_path: path to output .tflite file
-    """
-    converter = tf.lite.TFLiteConverter.from_saved_model(saved_model_dir)
-    tflite_model = converter.convert()
-    with open(tflite_output_path, "wb") as f:
-        f.write(tflite_model)
-    print(f"TFLite model saved to: {tflite_output_path}")
+    tflite_path: file path of saved model in .tflite format
+    
+    Output
+    -----
+    Outputs accuracy of inference using TFLite model at tflite_path
+    '''
+    # Load mnist dataset
+    (ds_train, ds_test), ds_info = tfds.load(
+        'mnist',
+        split=['train', 'test'],
+        shuffle_files=True,
+        as_supervised=True,
+        with_info=True,
+    )
+
+    # Normalize image (uint8 -> float32)
+    ds_test = ds_test.map(lambda image, label: (tf.cast(image, tf.float32) / 255., label), 
+                          num_parallel_calls=tf.data.AUTOTUNE)
+    ds_test = ds_test.shuffle(buffer_size=1000)
+    ds_test = ds_test.batch(128)
+    ds_test = ds_test.cache()
+    ds_test = ds_test.prefetch(tf.data.AUTOTUNE)
+
+    # Load saved tflite model
+    interpreter = tf.lite.Interpreter(model_path=tflite_path)
+    interpreter.allocate_tensors()
+
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+
+    # Perform inference and compute accuracy of predictions
+    correct = 0
+    total = 0
+
+    for images, labels in ds_test:
+        for i in range(images.shape[0]):
+            input_data = images[i].numpy().reshape(input_details[0]['shape']).astype(np.float32)
+
+            interpreter.set_tensor(input_details[0]['index'], input_data)
+            interpreter.invoke()
+            output_data = interpreter.get_tensor(output_details[0]['index'])
+
+            predicted_label = np.argmax(output_data)
+
+            if predicted_label == labels[i].numpy():
+                correct += 1
+            total += 1
+
+    accuracy = correct / total
+    print(f"Accuracy: {accuracy:.4f}")
 
 
-# Step 1: Convert ONNX → TensorFlow SavedModel
-convert_onnx_to_tf("models/model.onnx", "converted_tf_model")
+if __name__ == "__main__":
+    onnx_path = "models/model.onnx"
+    output_folder_path = "models/converted_model/"
+    tflite_path = "models/converted_model/model_float32.tflite"
 
-# Step 2: Convert TensorFlow → TFLite
-convert_tf_to_tflite("converted_tf_model", "converted_model.tflite")
-
-# Step 3: Load and run inference on TFLite model
-interpreter = tf.lite.Interpreter(model_path="converted_model.tflite")
-interpreter.allocate_tensors()
-
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
-
-# Step 4: Load sample from MNIST dataset
-(_, _), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
-x_sample = x_test[0]
-y_true = y_test[0]
-
-# Step 5: Preprocess input
-x_input = x_sample.astype(np.float32) / 255.0
-x_input = np.expand_dims(x_input, axis=0)
-if len(input_details[0]['shape']) == 4:
-    x_input = np.expand_dims(x_input, axis=-1)
-
-# Step 6: Inference
-interpreter.set_tensor(input_details[0]['index'], x_input)
-interpreter.invoke()
-
-output_data = interpreter.get_tensor(output_details[0]['index'])
-predicted_label = np.argmax(output_data)
-
-print(f"Predicted label: {predicted_label}")
-print(f"True label: {y_true}")
+    convert_onnx_to_tf(onnx_path, output_folder_path)
+    perform_inference(tflite_path)
