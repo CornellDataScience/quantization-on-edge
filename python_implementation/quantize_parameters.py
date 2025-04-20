@@ -1,6 +1,7 @@
 import json
 import numpy as np
-from linear_quantization import linear_quantize_data
+# from linear_quantization import linear_quantize_data
+from logarithmic_quantization import logarithmic_dequantize_data
 
 def quantize_parameters(input_path, output_path, bit_size):
     '''
@@ -25,12 +26,12 @@ def quantize_parameters(input_path, output_path, bit_size):
         param_array = np.array(param_value, dtype=np.float32)
         
         if "ReadVariableOp" in param_name and "MatMul" in param_name: # Only quantize weights
-            Q, S, Z = linear_quantize_data(param_array, bit_size)
+            Q, S, r_min = logarithmic_dequantize_data(param_array, bit_size)
             
             quantized_params[param_name] = {
                 "data": Q.tolist(),
                 "scale": float(S),
-                "zero_point": float(Z),
+                "activation_log_min": float(r_min),
                 "to_quantize": True
             }
         else:

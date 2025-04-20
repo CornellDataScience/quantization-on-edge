@@ -1,6 +1,7 @@
 import json
 import numpy as np
-from linear_quantization import linear_quantize_data
+# from linear_quantization import linear_quantize_data
+from logarithmic_quantization import logarithmic_quantize_data
 
 def quantize_activations(input_path, output_path, bit_size):
     '''
@@ -23,11 +24,11 @@ def quantize_activations(input_path, output_path, bit_size):
     
     for activation_name, activation_value in activations.items():
         activation_array = np.array(activation_value, dtype=np.float32)
-        _, S, Z = linear_quantize_data(activation_array, bit_size)
+        _, S, r_min = logarithmic_quantize_data(activation_array, bit_size)
         
         quantized_activations[activation_name] = {
             "activation_scale": float(S),
-            "activation_zero_point": int(Z),
+            "activation_zero_point": int(r_min),
             "bit_width": bit_size
         }
 
