@@ -49,3 +49,9 @@ wrapt==1.17.2
 zipp==3.21.0
 tensorflow_datasets
 onnxruntime
+onnx2tf
+onnx-graphsurgeon
+tf-keras
+ai-edge-litert
+sng4onnx
+onnx2keras
