@@ -258,11 +258,10 @@ class SymmMatMulAddReLUFusion(OpRun):
         b = b.copy()
         M = (s_x * s_W) / s_R
         return max(0, (np.matmul(W, x) + b) * M) # FIXME need to make sure s_b = s_x * s_W for accuracy
-
-
+    
 class Quantize(OpRun):
     '''
-    Performs 8-bit linear quantization
+    Performs 8-bit logarithmic quantization
 
     Input
     -----
@@ -279,12 +278,13 @@ class Quantize(OpRun):
     def _run(self, x, s_x, Z):
         x = x.copy()
         bit_size = 8
-        return np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1)
-    
-    
+        x = np.clip(x, 1e-8, None)  # prevent log(0) or negative
+        return np.clip(np.round(np.log2(x) / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1)
+
+
 class Dequantize(OpRun):
     '''
-    Performs 8-bit linear dequantization
+    Performs 8-bit logarithmic dequantization
 
     Input
     -----
@@ -300,7 +300,50 @@ class Dequantize(OpRun):
 
     def _run(self, x, s_x, Z):
         x = x.copy()
-        return s_x * (x - Z)
+        return np.power(2.0, s_x * (x - Z))
+
+
+# class Quantize(OpRun):
+#     '''
+#     Performs 8-bit linear quantization
+
+#     Input
+#     -----
+#     x: name of model input initializer
+#     s_x: name of scalar initializer of input
+#     Z: name of zero point initializer of input
+
+#     Output
+#     -----
+#     Returns quantized initializer
+#     '''
+#     op_domain = "quantize"
+    
+#     def _run(self, x, s_x, Z):
+#         x = x.copy()
+#         bit_size = 8
+#         return np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1)
+    
+    
+# class Dequantize(OpRun):
+#     '''
+#     Performs 8-bit linear dequantization
+
+#     Input
+#     -----
+#     x: name of activation initializer of previous layer
+#     s_x: name of activation scalar initializer of previous layer
+#     Z: name of zero point initializer of previous layer
+
+#     Output
+#     -----
+#     Returns dequantized initializer
+#     '''
+#     op_domain = "quantize"
+
+#     def _run(self, x, s_x, Z):
+#         x = x.copy()
+#         return s_x * (x - Z)
 
 
 if __name__ == "__main__":
@@ -320,4 +363,3 @@ if __name__ == "__main__":
             quantized_biases_path = "biases/quantized_biases.json"
             output_model_path = "models/quantized_model.onnx"
             quantize(prep_model_path, quantized_activations_path, quantized_biases_path, output_model_path)
-    
