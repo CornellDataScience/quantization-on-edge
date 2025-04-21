@@ -40,6 +40,8 @@ def prepare(onnx_model_path, quantized_params_path, output_prep_model_path):
             if params[tensor.name]["to_quantize"]:
                 # Retrieve quantization params from JSON
                 quantized_data = np.array(params[tensor.name]["data"], dtype=np.float32) # Use float32 to be compatible with ONNXRunTime v1.18 MatMul operator and multiplication with float32 activations
+                scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
+                zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.float32)
 
                 # Convert to ONNX tensors
                 quantized_initializer = numpy_helper.from_array(quantized_data, tensor.name)
@@ -113,24 +115,6 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
                 new_initializers.extend([quant_scale, quant_zero_point])
 
                 print(f"Added {tensor.name} scale={scale[0]} and zero_point={zero_point[0]}")
-    
-    # Load activations JSON
-    with open(quantized_activations_path) as f:
-        activations = json.load(f)
-    
-    # Iterate through activations, add scale and zero point
-    for node_name, values in activations.items(): # activations is 2D dictionary
-        scale = np.array([values["scale"]], dtype=np.float32)
-        zero_point = np.array([values["zero_point"]], dtype=np.int8)
-
-        scale_initializer = numpy_helper.from_array(scale, f"{node_name}_activation_scale")
-        zero_point_initializer = numpy_helper.from_array(zero_point, f"{node_name}_activation_zero_point")
-        
-        new_initializers.extend([scale_initializer, zero_point_initializer])
-
-        print(f"Added {node_name} scale={scale[0]} and zero_point={zero_point[0]}")
-        
-    graph.initializer.extend(new_initializers)
 
     # Load biases JSON
     with open(quantized_biases_path) as f:
@@ -145,14 +129,16 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
             # Convert to ONNX tensors
             quantized_biases_initializer = numpy_helper.from_array(quantized_data, tensor.name)
 
-            # Add quantized biases initializer and scale tensors
-            new_initializers.extend([quantized_biases_initializer])
+            # Replace original biases with quantized biases
+            tensor.CopyFrom(quantized_biases_initializer)
 
             print(f"Quantized {tensor.name} with scale={scale[0]}")
 
     # Iterate through nodes, replace with custom quantization nodes
     added_nodes = []
     removed_nodes = []
+
+    activation_initializers = set()
 
     graph_nodes = graph.node
 
@@ -169,11 +155,17 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
                                     domain="ai.onnx.contrib")
     
     added_nodes.append(quantize_node)
+    activation_initializers.add(s_x)
+    activation_initializers.add(Z)
 
     prev_node = quantize_node
     
     for i,node in enumerate(graph_nodes):
-        if prev_node == quantize_node: # if first node
+        print(node.name)
+        print([node.name for node in added_nodes])
+        print([node.name for node in removed_nodes])
+        print()
+        if i == 0:
             input_name = "quantized_input"
             shape_initializer = node.input[1]
             s_x = node.name + "_activation_scale"
@@ -187,6 +179,9 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
             
             added_nodes.append(new_head)
             removed_nodes.append(node)
+
+            activation_initializers.add(s_x)
+            activation_initializers.add(Z)
             
         if node.op_type == "MatMul":
             matmul_node = node
@@ -211,6 +206,8 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
                                                         domain="ai.onnx.contrib")
                 added_nodes.append(matmul_add_relu_fused_node)
                 removed_nodes.append(relu_node)
+
+                activation_initializers.add(s_R)
             else: # Node is the original output node
                 output = "quantized_output"
 
@@ -223,6 +220,8 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
                 
             removed_nodes.append(matmul_node)
             removed_nodes.append(add_node)
+
+            activation_initializers.add(s_x)
 
         if node.op_type != "Reshape":
             prev_node = node
@@ -238,6 +237,8 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
                                     outputs=[output_name], 
                                     domain="ai.onnx.contrib")
     added_nodes.append(dequantize_node)
+    activation_initializers.add(s_x)
+    activation_initializers.add(Z)
 
     # Replace nodes in graph
     for node in removed_nodes:
@@ -247,6 +248,39 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
     for node in added_nodes:
         if node not in graph.node:
             graph.node.append(node)
+
+    # Load activations JSON
+    with open(quantized_activations_path) as f:
+        activations = json.load(f)
+    
+    # Iterate through activations, add scale and zero point
+    for node_name, values in activations.items(): # activations is 2D dictionary
+        for attribute, value in activations[node_name].items():
+            if node_name + "_activation_" + attribute in activation_initializers:
+                if attribute == "scale":
+                    value = np.array([value], dtype=np.float32)
+                elif attribute == "zero_point":
+                    value = np.array([value], dtype=np.int8)
+
+                attribute_initializer = numpy_helper.from_array(value, f"{node_name}_activation_{attribute}")
+
+                new_initializers.extend([attribute_initializer])
+
+                print(f"Added {node_name} {attribute}={value}")
+        # if node_name in node_names: # Only add scale and zero point initializers for necessary nodes
+        # if True:
+            # print("in: ", node_name)
+            # scale = np.array([values["scale"]], dtype=np.float32)
+            # zero_point = np.array([values["zero_point"]], dtype=np.int8)
+
+            # scale_initializer = numpy_helper.from_array(scale, f"{node_name}_activation_scale")
+            # zero_point_initializer = numpy_helper.from_array(zero_point, f"{node_name}_activation_zero_point")
+            
+            # new_initializers.extend([scale_initializer, zero_point_initializer])
+
+            # print(f"Added {node_name} scale={scale[0]} and zero_point={zero_point[0]}")
+        
+    graph.initializer.extend(new_initializers)
 
     print('** Quantized nodes **')
     for node in model.graph.node:
@@ -261,103 +295,103 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
     print(f"Quantized model saved to {output_model_path}")
 
 
-class SymmMatMulAddFusion(OpRun):
-    '''
-    Perform fused matrix multiplication and bias addition assuming a symmetric quantization scheme
+# class SymmMatMulAddFusion(OpRun):
+#     '''
+#     Perform fused matrix multiplication and bias addition assuming a symmetric quantization scheme
 
-    Invariant: The output of this node is the final result of the graph
+#     Invariant: The output of this node is the final result of the graph
 
-    Input
-    -----
-    x: name of activation initializer of previous layer
-    W: name of weights initializer of current layer
-    b: name of bias initializer of current layer
-    s_x: name of activation scalar initializer of previous layer
-    s_W: name of weights scalar initializer of current layer
+#     Input
+#     -----
+#     x: name of activation initializer of previous layer
+#     W: name of weights initializer of current layer
+#     b: name of bias initializer of current layer
+#     s_x: name of activation scalar initializer of previous layer
+#     s_W: name of weights scalar initializer of current layer
 
-    Output
-    -----
-    Returns float32 result of matrix multiplication and bias addition
-    '''
+#     Output
+#     -----
+#     Returns float32 result of matrix multiplication and bias addition
+#     '''
 
-    op_domain = "ai.onnx.contrib"
+#     op_domain = "ai.onnx.contrib"
 
-    def _run(self, x, W, b, s_x, s_W):
-        x = x.copy()
-        W = W.copy()
-        b = b.copy()
-        return (s_W * s_x * (np.matmul(W, x) + b)) # FIXME need to make sure s_b = s_x * s_W for accuracy
-
-
-class SymmMatMulAddReLUFusion(OpRun):
-    '''
-    Perform fused matrix multiplication, bias addition, and ReLU assuming a symmetric quantization scheme
-
-    Input
-    -----
-    x: name of activation initializer of previous layer
-    W: name of weights initializer of current layer
-    b: name of bias initializer of current layer
-    s_x: name of activation scalar initializer of previous layer
-    s_W: name of weights scalar initializer of current layer
-    s_R: name of ReLU scalar initializer of previous layer
-
-    Output
-    -----
-    Returns unquantized result of matrix multiplication and bias addition
-    '''
-
-    op_domain = "ai.onnx.contrib"
-
-    def _run(self, x, W, b, s_x, s_W, s_R):
-        x = x.copy()
-        W = W.copy()
-        b = b.copy()
-        M = (s_x * s_W) / s_R
-        return max(0, (np.matmul(W, x) + b) * M) # FIXME need to make sure s_b = s_x * s_W for accuracy
+#     def _run(self, x, W, b, s_x, s_W):
+#         x = x.copy()
+#         W = W.copy()
+#         b = b.copy()
+#         return (s_W * s_x * (np.matmul(W, x) + b)) # FIXME need to make sure s_b = s_x * s_W for accuracy
 
 
-class Quantize(OpRun):
-    '''
-    Performs 8-bit linear quantization
+# class SymmMatMulAddReLUFusion(OpRun):
+#     '''
+#     Perform fused matrix multiplication, bias addition, and ReLU assuming a symmetric quantization scheme
 
-    Input
-    -----
-    x: name of model input initializer
-    s_x: name of scalar initializer of input
-    Z: name of zero point initializer of input
+#     Input
+#     -----
+#     x: name of activation initializer of previous layer
+#     W: name of weights initializer of current layer
+#     b: name of bias initializer of current layer
+#     s_x: name of activation scalar initializer of previous layer
+#     s_W: name of weights scalar initializer of current layer
+#     s_R: name of ReLU scalar initializer of previous layer
 
-    Output
-    -----
-    Returns quantized initializer
-    '''
-    op_domain = "ai.onnx.contrib"
+#     Output
+#     -----
+#     Returns unquantized result of matrix multiplication and bias addition
+#     '''
+
+#     op_domain = "ai.onnx.contrib"
+
+#     def _run(self, x, W, b, s_x, s_W, s_R):
+#         x = x.copy()
+#         W = W.copy()
+#         b = b.copy()
+#         M = (s_x * s_W) / s_R
+#         return max(0, (np.matmul(W, x) + b) * M) # FIXME need to make sure s_b = s_x * s_W for accuracy
+
+
+# class Quantize(OpRun):
+#     '''
+#     Performs 8-bit linear quantization
+
+#     Input
+#     -----
+#     x: name of model input initializer
+#     s_x: name of scalar initializer of input
+#     Z: name of zero point initializer of input
+
+#     Output
+#     -----
+#     Returns quantized initializer
+#     '''
+#     op_domain = "ai.onnx.contrib"
     
-    def _run(self, x, s_x, Z):
-        x = x.copy()
-        bit_size = 8
-        return np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1)
+#     def _run(self, x, s_x, Z):
+#         x = x.copy()
+#         bit_size = 8
+#         return np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1)
     
     
-class Dequantize(OpRun):
-    '''
-    Performs 8-bit linear dequantization
+# class Dequantize(OpRun):
+#     '''
+#     Performs 8-bit linear dequantization
 
-    Input
-    -----
-    x: name of activation initializer of previous layer
-    s_x: name of activation scalar initializer of previous layer
-    Z: name of zero point initializer of previous layer
+#     Input
+#     -----
+#     x: name of activation initializer of previous layer
+#     s_x: name of activation scalar initializer of previous layer
+#     Z: name of zero point initializer of previous layer
 
-    Output
-    -----
-    Returns dequantized initializer
-    '''
-    op_domain = "quantai.onnx.contribize"
+#     Output
+#     -----
+#     Returns dequantized initializer
+#     '''
+#     op_domain = "quantai.onnx.contribize"
 
-    def _run(self, x, s_x, Z):
-        x = x.copy()
-        return s_x * (x - Z)
+#     def _run(self, x, s_x, Z):
+#         x = x.copy()
+#         return s_x * (x - Z)
 
 
 if __name__ == "__main__":

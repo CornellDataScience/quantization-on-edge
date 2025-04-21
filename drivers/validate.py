@@ -1,35 +1,68 @@
 import onnx
-from onnxruntime.quantization import quant_pre_process, quantize_static
-from utils import MnistCalibrationDataReader, extract_parameters
+import onnxruntime as ort
+from onnxruntime_extensions import onnx_op, PyCustomOpDef, get_library_path
+import numpy as np
+from onnx.checker import check_model
+from utils import MnistCalibrationDataReader
+
+@onnx_op(op_type="SymmMatMulAddFusion",
+         inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
+         outputs=[PyCustomOpDef.dt_float])
+def SymmMatMulAddFusion(x, W, b, s_x, s_W):
+    return np.array(s_W * s_x * (np.matmul(x, W) + b), dtype=np.float32)
+
+@onnx_op(op_type="SymmMatMulAddReLUFusion",
+         inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
+         outputs=[PyCustomOpDef.dt_float])
+def SymmMatMulAddReLUFusion(x, W, b, s_x, s_W, s_R):
+    M = (s_x * s_W) / s_R
+    return np.array(np.maximum((np.matmul(x, W) + b) * M, 0), dtype=np.float32)
+
+@onnx_op(op_type="Quantize",
+         inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
+         outputs=[PyCustomOpDef.dt_float])
+def Quantize(x, s_x, Z):
+    bit_size = 8
+    return np.array(np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1), dtype=np.float32)
+
+@onnx_op(op_type="Dequantize",
+         inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
+         outputs=[PyCustomOpDef.dt_float])
+def Dequantize(x, s_x, Z):
+    return np.array(s_x * (x - Z), dtype=np.float32)
 
 if __name__ == "__main__":
-    onnx_model_path = "models/model.onnx"
-    model_prep_path = "models/validation_prep_model.onnx"
-    validation_model_path = "models/validation_model.onnx"
-    validation_params_path = "params/validation_quantized_params.json"
+    onnx_model_path = "models/quantized_model.onnx"
 
-    model = onnx.load(onnx_model_path)
-    input_layer_name = model.graph.input[0].name
+    onnx_model = onnx.load(onnx_model_path)
+    domain = "ai.onnx.contrib"
+    version = 1 # try 2 or 3, I had some issues with the versioning
+    new_opset = onnx.helper.make_opsetid(domain, version)
+    onnx_model.opset_import.append(new_opset)
 
-    # create CalibrationDataReader with dataset of size 10
-    calibration_data_reader = MnistCalibrationDataReader(input_layer_name, 10)
+    print('** Original nodes **')
+    for node in onnx_model.graph.node:
+        print("name=%r type=%r input=%r output=%r" % (
+            node.name, node.op_type, node.input, node.output))
+
+    so = ort.SessionOptions()
+    so.register_custom_ops_library(get_library_path())
+    session = ort.InferenceSession(onnx_model.SerializeToString(), so)
+
+    input_layer_name = onnx_model.graph.input[0].name
+    output_names = [x.name for x in onnx_model.graph.output]
+
+    print("label")
+    reader = MnistCalibrationDataReader(input_layer_name, 10)
     
-    # prepare model for quantization
-    quant_pre_process(onnx_model_path, model_prep_path)
-    
-    # quantize_static saves model to file, no return value
-    quantize_static(model_prep_path, validation_model_path, calibration_data_reader)
+    print()
+    print("predicted")
 
-    # load quantized_model
-    quantized_model = onnx.load(validation_model_path)
-    
-    # print(quantized_model)
+    for _ in range(len(reader)):
+        sample = reader.get_next()
+        if sample is None:
+            break
 
-    # print('** nodes **')
-    # for node in quantized_model.graph.node:
-    #     print("name=%r type=%r input=%r output=%r" % (
-    #         node.name, node.op_type, node.input, node.output))
+        print(np.argmax(session.run(output_names, sample)))
 
-    # parse parameters from quantized validation model into JSON file
-    extract_parameters(quantized_model, validation_params_path)
-    
+    # check_model(onnx_model)
