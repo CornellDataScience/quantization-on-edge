@@ -8,12 +8,6 @@ Install dependencies: `pip install -r requirements.txt`
 
 Create quantized model from scratch: `make`
 
-### Miscellaneous
-
-Validate quantized parameters: `make validate`
-
-Clear `models/` and `params/` directories: `make clean`
-
 ### Quantize from Scratch
 
 1. Extract unquantized parameters: `make setup`
@@ -22,3 +16,9 @@ Clear `models/` and `params/` directories: `make clean`
 4. Calculate quantized activations: `make quantize_activations`
 5. Calculate quantized biases: `make quantize_biases`
 3. Fully quantize model: `make quantize_model`
+
+### Miscellaneous
+
+Validate quantized parameters: `make validate`
+
+Clear `activations/`, `biases/`, `params/`, and `models/` directories: `make clean`

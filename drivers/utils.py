@@ -117,7 +117,7 @@ def extract_activations(onnx_model, output_path):
     Saves (unquantized or quantized) model activations to output_path
     '''
     original_outputs = [x.name for x in onnx_model.graph.output]
-    node_output_pairs = [("Quantize", "quantized_input")] # Create stub for model input
+    node_output_pairs = [("QuantizeLayer", "quantize_input")] # Create stub for model input
 
     for node in onnx_model.graph.node:
         for output in node.output:
@@ -139,7 +139,8 @@ def extract_activations(onnx_model, output_path):
 
     input_layer_name = onnx_model.graph.input[0].name
 
-    reader = MnistCalibrationDataReader(input_layer_name, 1000)
+    num_samples = 1000
+    reader = MnistCalibrationDataReader(input_layer_name, num_samples)
     for _ in range(len(reader)):
         sample = reader.get_next()
         if sample is None:
@@ -148,7 +149,6 @@ def extract_activations(onnx_model, output_path):
         ort_outs = [sample[input_layer_name].flatten()] # Add model input to outputs
         ort_outs.extend(session.run(output_names, sample))
         
-
         for pair, act in zip(node_output_pairs, ort_outs):
             activation_distributions[pair].append(act)
 

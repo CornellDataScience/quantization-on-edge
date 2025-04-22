@@ -1,4 +1,4 @@
-.PHONY: all clean setup quantize_params prep_model quantize_activations quantize_biases quantize_model validate
+.PHONY: all clean setup quantize_params prep_model quantize_activations quantize_biases quantize_model validate reference_model
 
 all: setup quantize_params prep_model quantize_activations quantize_biases quantize_model
 
@@ -41,5 +41,8 @@ quantize_biases: activations/prep_activations.json
 quantize_model: activations/quantized_activations.json biases/quantized_biases.json
 	python3 python_implementation/quantize_model.py full
 
-validate: models/model.onnx
+validate: models/quantized_model.onnx
 	python3 drivers/validate.py
+
+reference_model: models/onnx_model.onnx
+	python3 drivers/reference.py
