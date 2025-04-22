@@ -2,8 +2,8 @@ import onnx
 import onnxruntime as ort
 from onnxruntime_extensions import onnx_op, PyCustomOpDef, get_library_path
 import numpy as np
-from onnx.checker import check_model
-from utils import MnistCalibrationDataReader, extract_activations
+import tensorflow as tf
+import tensorflow_datasets as tfds
 
 @onnx_op(op_type="SymmMatMulAddReLUFusion",
          inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int32, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
@@ -36,42 +36,44 @@ def Quantize(x, s_x, Z):
 def Dequantize(x, s_x, Z):
     return np.array(s_x * (x - Z), dtype=np.float32)
 
-if __name__ == "__main__":
-    onnx_model_path = "models/quantized_model.onnx"
+def test(onnx_model, inference_session, num_samples):
+    dataset = tfds.load("mnist", shuffle_files=True)
+    
+    num_samples = num_samples if num_samples else len(dataset["test"])
+    test_set = dataset["test"].take(num_samples)
 
+    num_correct = 0
+    input_layer_name = onnx_model.graph.input[0].name
+    for sample in test_set:
+        label = int(sample["label"])
+        image = np.array(sample["image"])
+        image = np.reshape(image, (1, image.shape[0], image.shape[1])).astype(np.float32)
+
+        input = {f"{input_layer_name}": image}
+        pred = int(np.argmax(inference_session.run(["output"], input)))
+
+        num_correct += label == pred
+
+    print(num_correct / num_samples)
+
+
+def create_inference_session(onnx_model_path):
     onnx_model = onnx.load(onnx_model_path)
     domain = "ai.onnx.contrib"
-    version = 1 # try 2 or 3, I had some issues with the versioning
+    version = 1
     new_opset = onnx.helper.make_opsetid(domain, version)
     onnx_model.opset_import.append(new_opset)
-
-    print('** Original nodes **')
-    for node in onnx_model.graph.node:
-        print("name=%r type=%r input=%r output=%r" % (
-            node.name, node.op_type, node.input, node.output))
 
     so = ort.SessionOptions()
     so.register_custom_ops_library(get_library_path())
     session = ort.InferenceSession(onnx_model.SerializeToString(), so)
 
-    # extract_activations(onnx_model, "activations/full_quant_activations.json")
+    return onnx_model, session
 
-    input_layer_name = onnx_model.graph.input[0].name
-    output_names = [x.name for x in onnx_model.graph.output]
+if __name__ == "__main__":
+    onnx_model_path = "models/quantized_model.onnx"
 
-    print("label")
-    reader = MnistCalibrationDataReader(input_layer_name, 10)
+    model, session = create_inference_session(onnx_model_path)
     
-    print()
-    print("predicted")
-
-    for _ in range(len(reader)):
-        sample = reader.get_next()
-        if sample is None:
-            break
-
-        res = session.run(output_names, sample)
-        print(np.argmax(res))
-        # print(res)
-
-    # check_model(onnx_model)
+    num_samples = None
+    test(model, session, num_samples)

@@ -49,3 +49,4 @@ wrapt==1.17.2
 zipp==3.21.0
 tensorflow_datasets
 onnxruntime
+onnxruntime_extensions
