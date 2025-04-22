@@ -28,8 +28,8 @@ class MnistCalibrationDataReader(CalibrationDataReader):
         # Load dataset and extract `num` training examples
         dataset = tfds.load("mnist", shuffle_files=True)
         dataset_subset = dataset["train"].take(num)
-        for item in dataset_subset:
-            print(int(item["label"]))
+        # for item in dataset_subset:
+        #     print(int(item["label"]))
         self.calibration_images = [np.array(item["image"]) for item in dataset_subset]
 
         self.current_item = 0
@@ -141,7 +141,8 @@ def extract_activations(onnx_model, output_path):
 
     input_layer_name = onnx_model.graph.input[0].name
 
-    reader = MnistCalibrationDataReader(input_layer_name, 10)
+    num_samples = 1000
+    reader = MnistCalibrationDataReader(input_layer_name, num_samples)
     for _ in range(len(reader)):
         sample = reader.get_next()
         if sample is None:

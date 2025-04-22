@@ -3,30 +3,31 @@ import onnxruntime as ort
 from onnxruntime_extensions import onnx_op, PyCustomOpDef, get_library_path
 import numpy as np
 from onnx.checker import check_model
-from utils import MnistCalibrationDataReader
-
-@onnx_op(op_type="SymmMatMulAddFusion",
-         inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
-         outputs=[PyCustomOpDef.dt_float])
-def SymmMatMulAddFusion(x, W, b, s_x, s_W):
-    return np.array(s_W * s_x * (np.matmul(x, W) + b), dtype=np.float32)
+from utils import MnistCalibrationDataReader, extract_activations
 
 @onnx_op(op_type="SymmMatMulAddReLUFusion",
-         inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
-         outputs=[PyCustomOpDef.dt_float])
+         inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int32, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
+         outputs=[PyCustomOpDef.dt_int8])
 def SymmMatMulAddReLUFusion(x, W, b, s_x, s_W, s_R):
     M = (s_x * s_W) / s_R
-    return np.array(np.maximum((np.matmul(x, W) + b) * M, 0), dtype=np.float32)
+    return np.array(np.maximum(M * (np.matmul(x, W) + b), 0), dtype=np.int8)
+
+@onnx_op(op_type="SymmMatMulAddFusion",
+         inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int32, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
+         outputs=[PyCustomOpDef.dt_int8])
+def SymmMatMulAddFusion(x, W, b, s_x, s_W, s_b):
+    M = (s_x * s_W) / s_b
+    return np.array(M * (np.matmul(x, W) + b), dtype=np.int8)
 
 @onnx_op(op_type="Quantize",
          inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
-         outputs=[PyCustomOpDef.dt_float])
+         outputs=[PyCustomOpDef.dt_int8])
 def Quantize(x, s_x, Z):
     bit_size = 8
-    return np.array(np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1), dtype=np.float32)
+    return np.array(np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1), dtype=np.int8)
 
 @onnx_op(op_type="Dequantize",
-         inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
+         inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
          outputs=[PyCustomOpDef.dt_float])
 def Dequantize(x, s_x, Z):
     return np.array(s_x * (x - Z), dtype=np.float32)

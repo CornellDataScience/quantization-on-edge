@@ -34,28 +34,21 @@ def prepare(onnx_model_path, quantized_params_path, output_prep_model_path):
         params = json.load(f)
 
     # Iterate through params, replace with quantized from JSON
-    new_initializers = []
     for tensor in graph.initializer:
         if tensor.name in params:
             if params[tensor.name]["to_quantize"]:
                 # Retrieve quantization params from JSON
-                quantized_data = np.array(params[tensor.name]["data"], dtype=np.float32) # Use float32 to be compatible with ONNXRunTime v1.18 MatMul operator and multiplication with float32 activations
+                quantized_data = np.array(params[tensor.name]["data"], dtype=np.float32) # Use float32 to be compatible with ONNXRunTime v1.18 MatMul operator
                 scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
                 zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.float32)
 
                 # Convert to ONNX tensors
                 quantized_initializer = numpy_helper.from_array(quantized_data, tensor.name)
 
-                # Add quantized initializer and scale/zero-point tensors
-                new_initializers.extend([quantized_initializer])
+                # Replace original initializer with quantized initializer
+                tensor.CopyFrom(quantized_initializer)
 
                 print(f"Quantized {tensor.name} with scale={scale[0]}, zero_point={zero_point[0]}")
-            else:
-                new_initializers.extend([tensor])
-
-    # Remove original initializers and replace with new ones
-    graph.ClearField("initializer")
-    graph.initializer.extend(new_initializers) # Note: consider creating initializers for ReLU
 
     print('** Prepped nodes **')
     for node in model.graph.node:
@@ -102,14 +95,19 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
     # Iterate through params, add scale and zero point
     for tensor in graph.initializer:
         if tensor.name in params:
-            if params[tensor.name]["to_quantize"]:
+            if params[tensor.name]["to_quantize"]: # Only quantize weights, not biases
                 # Retrieve quantization params from JSON
+                quantized_weight = np.array(params[tensor.name]["data"], dtype=np.int8)
                 scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
-                zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.float32)
+                zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.int8)
 
                 # Convert to ONNX tensors
+                quantized_weight_initializer = numpy_helper.from_array(quantized_weight, tensor.name)
                 quant_scale = numpy_helper.from_array(scale, tensor.name + "_scale")
                 quant_zero_point = numpy_helper.from_array(zero_point, tensor.name + "_zero_point")
+
+                # Replace original weight with quantized weight
+                tensor.CopyFrom(quantized_weight_initializer)
 
                 # Add quantized initializer and scale/zero-point tensors
                 new_initializers.extend([quant_scale, quant_zero_point])
@@ -122,12 +120,12 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
 
     for tensor in graph.initializer:
         if tensor.name in biases:
-            # Retrieve quantizated biases from JSON
-            quantized_data = np.array(biases[tensor.name]["data"], dtype=np.float32)
+            # Retrieve quantizated bias from JSON
+            quantized_bias = np.array(biases[tensor.name]["data"], dtype=np.int32)
             scale = np.array([biases[tensor.name]["scale"]], dtype=np.float32)
 
             # Convert to ONNX tensors
-            quantized_biases_initializer = numpy_helper.from_array(quantized_data, tensor.name)
+            quantized_biases_initializer = numpy_helper.from_array(quantized_bias, tensor.name)
 
             # Replace original biases with quantized biases
             tensor.CopyFrom(quantized_biases_initializer)
@@ -208,12 +206,13 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
                 removed_nodes.append(relu_node)
 
                 activation_initializers.add(s_R)
-            else: # Node is the original output node
+            else: # Node is the last matmul node before output
+                s_b = add_node.name + "_activation_scale"
                 output = "quantized_output"
 
                 matmul_add_fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "SymmMatMulAddFusion", 
                                                         op_type="SymmMatMulAddFusion", 
-                                                        inputs=[x, W, b, s_x, s_W], 
+                                                        inputs=[x, W, b, s_x, s_W, s_b], 
                                                         outputs=[output], 
                                                         domain="ai.onnx.contrib")
                 added_nodes.append(matmul_add_fused_node)
@@ -254,7 +253,7 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
         activations = json.load(f)
     
     # Iterate through activations, add scale and zero point
-    for node_name, values in activations.items(): # activations is 2D dictionary
+    for node_name, _ in activations.items(): # activations is 2D dictionary
         for attribute, value in activations[node_name].items():
             if node_name + "_activation_" + attribute in activation_initializers:
                 if attribute == "scale":
