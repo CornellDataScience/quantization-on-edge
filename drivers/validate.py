@@ -9,13 +9,17 @@ from utils import MnistCalibrationDataReader, extract_activations
          inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int32, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
          outputs=[PyCustomOpDef.dt_int8])
 def SymmMatMulAddReLUFusion(x, W, b, s_x, s_W, s_R):
+    x = x.copy().astype(np.int32)
+    W = W.copy().astype(np.int32)
     M = (s_x * s_W) / s_R
-    return np.array(np.maximum(M * (np.matmul(x, W) + b), 0), dtype=np.int8)
+    return np.array(M * (np.maximum(np.matmul(x, W) + b, 0)), dtype=np.int8)
 
 @onnx_op(op_type="SymmMatMulAddFusion",
          inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int32, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
          outputs=[PyCustomOpDef.dt_int8])
 def SymmMatMulAddFusion(x, W, b, s_x, s_W, s_b):
+    x = x.copy().astype(np.int32)
+    W = W.copy().astype(np.int32)
     M = (s_x * s_W) / s_b
     return np.array(M * (np.matmul(x, W) + b), dtype=np.int8)
 
@@ -50,6 +54,8 @@ if __name__ == "__main__":
     so.register_custom_ops_library(get_library_path())
     session = ort.InferenceSession(onnx_model.SerializeToString(), so)
 
+    # extract_activations(onnx_model, "activations/full_quant_activations.json")
+
     input_layer_name = onnx_model.graph.input[0].name
     output_names = [x.name for x in onnx_model.graph.output]
 
@@ -64,6 +70,8 @@ if __name__ == "__main__":
         if sample is None:
             break
 
-        print(np.argmax(session.run(output_names, sample)))
+        res = session.run(output_names, sample)
+        print(np.argmax(res))
+        # print(res)
 
     # check_model(onnx_model)

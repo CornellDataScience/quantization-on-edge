@@ -38,10 +38,10 @@ def prepare(onnx_model_path, quantized_params_path, output_prep_model_path):
         if tensor.name in params:
             if params[tensor.name]["to_quantize"]:
                 # Retrieve quantization params from JSON
-                quantized_data = np.array(params[tensor.name]["data"], dtype=np.float32) # Use float32 to be compatible with ONNXRunTime v1.18 MatMul operator
                 scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
                 zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.float32)
-
+                quantized_data = scale * np.array(params[tensor.name]["data"], dtype=np.float32) # Use float32 to be compatible with ONNXRunTime v1.18 MatMul operator
+                
                 # Convert to ONNX tensors
                 quantized_initializer = numpy_helper.from_array(quantized_data, tensor.name)
 

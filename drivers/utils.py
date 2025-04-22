@@ -28,8 +28,8 @@ class MnistCalibrationDataReader(CalibrationDataReader):
         # Load dataset and extract `num` training examples
         dataset = tfds.load("mnist", shuffle_files=True)
         dataset_subset = dataset["train"].take(num)
-        # for item in dataset_subset:
-        #     print(int(item["label"]))
+        for item in dataset_subset:
+            print(int(item["label"]))
         self.calibration_images = [np.array(item["image"]) for item in dataset_subset]
 
         self.current_item = 0
@@ -105,6 +105,8 @@ def extract_parameters(onnx_model, output_path):
 
     print(f"Parameters extracted and saved to: {output_path}")
 
+from onnxruntime_extensions import get_library_path
+
 def extract_activations(onnx_model, output_path):
     '''
     Extract model activations and save in JSON
@@ -119,18 +121,22 @@ def extract_activations(onnx_model, output_path):
     Saves (unquantized or quantized) model activations to output_path
     '''
     original_outputs = [x.name for x in onnx_model.graph.output]
-    node_output_pairs = [("QuantizeLayer", "quantized_input")] # Create stub for model input
+    # node_output_pairs = [("QuantizeLayer", "quantize_input")] # Create stub for model input
+    node_output_pairs = [("InputLayer", "input")] # Create stub for model input
 
     for node in onnx_model.graph.node:
         for output in node.output:
             if output not in original_outputs:
-                new_output = helper.make_tensor_value_info(output, TensorProto.FLOAT, None)
+                new_output = helper.make_tensor_value_info(output, TensorProto.INT8, None)
                 onnx_model.graph.output.append(new_output)
                 original_outputs.append(output)
 
             node_output_pairs.append((node.name, output))
 
-    session = ort.InferenceSession(onnx_model.SerializeToString())
+    # session = ort.InferenceSession(onnx_model.SerializeToString())
+    so = ort.SessionOptions()
+    so.register_custom_ops_library(get_library_path())
+    session = ort.InferenceSession(onnx_model.SerializeToString(), so)
 
     output_names = [pair[1] for pair in node_output_pairs[1:]] # Do not include stub in inference session outputs
     print("Model node-output pairs (including intermediate activations):")
@@ -141,7 +147,7 @@ def extract_activations(onnx_model, output_path):
 
     input_layer_name = onnx_model.graph.input[0].name
 
-    num_samples = 1000
+    num_samples = 1
     reader = MnistCalibrationDataReader(input_layer_name, num_samples)
     for _ in range(len(reader)):
         sample = reader.get_next()
