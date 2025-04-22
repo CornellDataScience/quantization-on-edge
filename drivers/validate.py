@@ -105,7 +105,7 @@ def create_inference_session(onnx_model_path, hasCustom):
     return onnx_model, session
 
 if __name__ == "__main__":
-    onnx_model_path = "models/quantized_model.onnx"
+    onnx_model_path = "models/quantize_model.onnx"
 
     hasCustom = True
     model, session = create_inference_session(onnx_model_path, hasCustom)

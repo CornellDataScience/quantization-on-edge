@@ -122,7 +122,7 @@ def extract_activations(onnx_model, output_path):
     for node in onnx_model.graph.node:
         for output in node.output:
             if output not in original_outputs:
-                new_output = helper.make_tensor_value_info(output, TensorProto.INT8, None)
+                new_output = helper.make_tensor_value_info(output, TensorProto.FLOAT, None)
                 onnx_model.graph.output.append(new_output)
                 original_outputs.append(output)
 
