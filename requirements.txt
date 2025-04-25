@@ -50,3 +50,10 @@ zipp==3.21.0
 tensorflow_datasets
 onnxruntime
 onnxruntime_extensions
+onnx2tf
+onnx-graphsurgeon
+tf-keras
+ai-edge-litert
+sng4onnx
+onnx2keras
+transformers

@@ -24,7 +24,7 @@ def quantize_parameters(input_path, output_path, bit_size):
     for param_name, param_value in params.items():
         param_array = np.array(param_value, dtype=np.float32)
         
-        if "ReadVariableOp" in param_name and "MatMul" in param_name: # Only quantize weights
+        if "ReadVariableOp" in param_name and ("MatMul" in param_name or "Cast" in param_name): # Only quantize weights
             Q, S, Z = linear_quantize_data(param_array, bit_size)
             
             quantized_params[param_name] = {
