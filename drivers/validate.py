@@ -37,6 +37,15 @@ def Quantize(x, s_x, Z):
 def Dequantize(x, s_x, Z):
     return np.array(s_x * (x - Z), dtype=np.float32)
 
+@onnx_op(op_type = "QuantDequant",
+         inputs =[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
+         outputs=[PyCustomOpDef.dt_float])
+def QuantDequant(x, s_x, Z):
+    bit_size = 8
+    quant = np.array(np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1), dtype=np.int8)
+    dequant = np.array(s_x * (quant - Z), dtype=np.float32)
+    return dequant
+
 def test(onnx_model, inference_session, dataset_name, num_samples):
     '''
     Run num_samples of inference on the ONNX model using the provided inference session
