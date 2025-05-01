@@ -366,14 +366,14 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
                 s_R = relu_node.name + "_activation_scale"
 
                 # ADDED OUTPUT ZERO POINT
-                z_R = relu_node.name + "_activation_zero_point"
+                # z_R = relu_node.name + "_activation_zero_point"
 
                 output = relu_node.output[0]
 
                 # USE ASYMM OP AND EXTRA INPUTS
                 fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "AsymmMatMulAddReLUFusion",
                                               op_type="AsymmMatMulAddReLUFusion",
-                                              inputs=[x, W, b, s_x, s_W, s_R, z_x, z_W, z_R],
+                                              inputs=[x, W, b, s_x, s_W, s_R, z_x, z_W],
                                               outputs=[output],
                                               domain="ai.onnx.contrib")
                 
@@ -383,19 +383,20 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
                 added_nodes.append(fused_node)
                 removed_nodes.extend([matmul_node, add_node, relu_node])
 
-                activation_initializers.update([s_R, z_R])
+                # activation_initializers.update([s_R, z_R])
+                activation_initializers.update([s_R])
             else:
                 s_b = add_node.name + "_activation_scale"
 
                 # HANDLE OUTPUT ZERO POINT
-                z_R = add_node.name + "_activation_zero_point"
+                # z_b = add_node.name + "_activation_zero_point"
 
                 output = "quantized_output"
 
                 # USE ASYMM OP AND EXTRA INPUTS
                 fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "AsymmMatMulAddFusion",
                                               op_type="AsymmMatMulAddFusion",
-                                              inputs=[x, W, b, s_x, s_W, s_b, z_x, z_W, z_R],
+                                              inputs=[x, W, b, s_x, s_W, s_b, z_x, z_W],
                                               outputs=[output],
                                               domain="ai.onnx.contrib")
                 # --- END ASYMMETRIC CHANGE ---

@@ -40,7 +40,7 @@ def AsymmMatMulAddReLUFusion(x, W, b, s_x, s_W, s_R, z_x, z_W):
     M = (s_x * s_W) / s_R
     return np.array(M * (np.maximum(np.matmul(x - z_x, W - z_W) + b, 0)), dtype=np.int8)
 
-@onnx_op(op_type="AsymmMatMulAddReLUFusion",
+@onnx_op(op_type="AsymmMatMulAddFusion",
          inputs=[
              PyCustomOpDef.dt_int8, 
              PyCustomOpDef.dt_int8,  
@@ -53,11 +53,11 @@ def AsymmMatMulAddReLUFusion(x, W, b, s_x, s_W, s_R, z_x, z_W):
          ],
          outputs=[PyCustomOpDef.dt_int8])
 
-def AsymmMatMulAddReLUFusion(x, W, b, s_x, s_W, s_R, z_x, z_W):
+def AsymmMatMulAddFusion(x, W, b, s_x, s_W, s_b, z_x, z_W):
     x = x.copy().astype(np.int32)
     W = W.copy().astype(np.int32)
     
-    M = (s_x * s_W) / s_R
+    M = (s_x * s_W) / s_b
     return np.array(M * (np.matmul(x - z_x, W - z_W) + b, 0), dtype=np.int8)
   
 @onnx_op(op_type="Quantize",
