@@ -4,6 +4,7 @@ from onnxruntime_extensions import onnx_op, PyCustomOpDef, get_library_path
 import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
+from ..python_implementation import linear_quantization as lq
 
 # Create and register custom ONNX operators
 @onnx_op(op_type="SymmMatMulAddReLUFusion",
@@ -38,13 +39,11 @@ def Dequantize(x, s_x, Z):
     return np.array(s_x * (x - Z), dtype=np.float32)
 
 @onnx_op(op_type = "QuantDequant",
-         inputs =[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
+         inputs =[PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
          outputs=[PyCustomOpDef.dt_float])
-def QuantDequant(x, s_x, Z):
-    bit_size = 8
-    quant = np.array(np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1), dtype=np.int8)
-    dequant = np.array(s_x * (quant - Z), dtype=np.float32)
-    return dequant
+def QuantDequant(data, bit_size):
+    _, S, Z = lq.linear_quantize_data(data, bit_size)
+    return lq.linear_dequantize_data(data, S, Z)
 
 def test(onnx_model, inference_session, dataset_name, num_samples):
     '''
