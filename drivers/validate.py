@@ -105,3 +105,13 @@ if __name__ == "__main__":
     print(f"Quantized model size: {model_size} bytes")
     print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
     print(f"Quantized average time: {avg_time:.4f} ms")
+
+    onnx_model_path = "models/asymmetric_model.onnx"
+
+    model_size = os.path.getsize(onnx_model_path)
+    model, session = create_inference_session(onnx_model_path, hasCustom=True)
+    accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
+
+    print(f"Quantized model size: {model_size} bytes")
+    print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
+    print(f"Quantized average time: {avg_time:.4f} ms")

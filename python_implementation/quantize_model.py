@@ -346,6 +346,24 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
     prev_node = quantize_node
 
     for i, node in enumerate(graph_nodes):
+        if i == 0:
+            input_name = "quantized_input"
+            shape_initializer = node.input[1]
+            s_x = node.name + "_activation_scale"
+            Z = node.name + "_activation_zero_point"
+            output_name = node.output[0]
+            new_head = helper.make_node(name=node.name, 
+                                        op_type=node.op_type, 
+                                        inputs=[input_name, shape_initializer], 
+                                        outputs=[output_name], 
+                                        domain=node.domain)
+            
+            added_nodes.append(new_head)
+            removed_nodes.append(node)
+
+            activation_initializers.add(s_x)
+            activation_initializers.add(Z)
+    
         if node.op_type == "MatMul":
             matmul_node = node
             add_node = graph_nodes[i + 1]
@@ -475,7 +493,7 @@ if __name__ == "__main__":
             quantized_params_path = "params/quantized_params.json"
             output_prep_model_path = "models/prep_model.onnx"
             prepare(onnx_model_path, quantized_params_path, output_prep_model_path)
-        elif mode == "full":
+        elif mode == "symmetric":
             prep_model_path = "models/prep_model.onnx"
             quantized_params_path = "params/quantized_params.json"
             quantized_activations_path = "activations/quantized_activations.json"
