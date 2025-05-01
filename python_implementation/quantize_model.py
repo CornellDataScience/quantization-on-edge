@@ -279,6 +279,190 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
     print(f"Quantized model saved to {output_model_path}")
 
 
+def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path):
+    # Load unquantized model
+    model = onnx.load(prep_model_path)
+    graph = model.graph
+
+    print('** Original nodes **')
+    for node in model.graph.node:
+        print("name=%r type=%r input=%r output=%r" % (
+            node.name, node.op_type, node.input, node.output))
+
+    new_initializers = []
+
+    # Load params JSON
+    with open(quantized_params_path) as f:
+        params = json.load(f)
+
+    for tensor in graph.initializer:
+        if tensor.name in params:
+            if params[tensor.name]["to_quantize"]:
+                quantized_weight = np.array(params[tensor.name]["data"], dtype=np.int8)
+                scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
+                zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.int8)
+
+                quantized_weight_initializer = numpy_helper.from_array(quantized_weight, tensor.name)
+                quant_scale = numpy_helper.from_array(scale, tensor.name + "_scale")
+                quant_zero_point = numpy_helper.from_array(zero_point, tensor.name + "_zero_point")
+
+                tensor.CopyFrom(quantized_weight_initializer)
+                new_initializers.extend([quant_scale, quant_zero_point])
+                print(f"Added {tensor.name} scale={scale[0]} and zero_point={zero_point[0]}")
+
+    # Load biases JSON
+    with open(quantized_biases_path) as f:
+        biases = json.load(f)
+
+    for tensor in graph.initializer:
+        if tensor.name in biases:
+            quantized_bias = np.array(biases[tensor.name]["data"], dtype=np.int32)
+            scale = np.array([biases[tensor.name]["scale"]], dtype=np.float32)
+            quantized_biases_initializer = numpy_helper.from_array(quantized_bias, tensor.name)
+            tensor.CopyFrom(quantized_biases_initializer)
+            print(f"Quantized {tensor.name} with scale={scale[0]}")
+
+    added_nodes = []
+    removed_nodes = []
+    activation_initializers = set()
+    graph_nodes = graph.node
+
+    # Add node to quantize model input
+    quantize_node_name = "QuantizeLayer"
+    input_name = graph.input[0].name
+    s_x = quantize_node_name + "_activation_scale"
+    Z = quantize_node_name + "_activation_zero_point"
+    output_name = "quantized_input"
+    quantize_node = helper.make_node(name=quantize_node_name,
+                                     op_type="Quantize",
+                                     inputs=[input_name, s_x, Z],
+                                     outputs=[output_name],
+                                     domain="ai.onnx.contrib")
+
+    added_nodes.append(quantize_node)
+    activation_initializers.add(s_x)
+    activation_initializers.add(Z)
+
+    prev_node = quantize_node
+
+    for i, node in enumerate(graph_nodes):
+        if node.op_type == "MatMul":
+            matmul_node = node
+            add_node = graph_nodes[i + 1]
+
+            x = matmul_node.input[0]
+            W = matmul_node.input[1]
+            b = add_node.input[1]
+            s_x = prev_node.name + "_activation_scale"
+            s_W = W + "_scale"
+
+            # ADDED ZERO POINTS
+            z_x = prev_node.name + "_activation_zero_point"
+            z_W = W + "_zero_point"
+
+
+            if i < len(graph_nodes) - 2:
+                relu_node = graph_nodes[i + 2]
+                s_R = relu_node.name + "_activation_scale"
+
+                # ADDED OUTPUT ZERO POINT
+                z_R = relu_node.name + "_activation_zero_point"
+
+                output = relu_node.output[0]
+
+                # USE ASYMM OP AND EXTRA INPUTS
+                fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "AsymmMatMulAddReLUFusion",
+                                              op_type="AsymmMatMulAddReLUFusion",
+                                              inputs=[x, W, b, s_x, s_W, s_R, z_x, z_W, z_R],
+                                              outputs=[output],
+                                              domain="ai.onnx.contrib")
+                
+                
+                
+
+                added_nodes.append(fused_node)
+                removed_nodes.extend([matmul_node, add_node, relu_node])
+
+                activation_initializers.update([s_R, z_R])
+            else:
+                s_b = add_node.name + "_activation_scale"
+
+                # HANDLE OUTPUT ZERO POINT
+                z_R = add_node.name + "_activation_zero_point"
+
+                output = "quantized_output"
+
+                # USE ASYMM OP AND EXTRA INPUTS
+                fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "AsymmMatMulAddFusion",
+                                              op_type="AsymmMatMulAddFusion",
+                                              inputs=[x, W, b, s_x, s_W, s_b, z_x, z_W, z_R],
+                                              outputs=[output],
+                                              domain="ai.onnx.contrib")
+                # --- END ASYMMETRIC CHANGE ---
+
+                added_nodes.append(fused_node)
+                removed_nodes.extend([matmul_node, add_node])
+
+            activation_initializers.update([s_x, z_x, z_W])
+
+        if node.op_type != "Reshape":
+            prev_node = node
+
+    # Add node to dequantize model output
+    input_name = "quantized_output"
+    s_x = prev_node.name + "_activation_scale"
+    Z = prev_node.name + "_activation_zero_point"
+    output_name = "output"
+    dequantize_node = helper.make_node(name="DequantizeLayer",
+                                       op_type="Dequantize",
+                                       inputs=[input_name, s_x, Z],
+                                       outputs=[output_name],
+                                       domain="ai.onnx.contrib")
+    added_nodes.append(dequantize_node)
+    activation_initializers.add(s_x)
+    activation_initializers.add(Z)
+
+    for node in removed_nodes:
+        if node in graph.node:
+            graph.node.remove(node)
+
+    for node in added_nodes:
+        if node not in graph.node:
+            graph.node.append(node)
+
+    # Load activations JSON
+    with open(quantized_activations_path) as f:
+        activations = json.load(f)
+
+    for node_name, _ in activations.items():
+        for attribute, value in activations[node_name].items():
+            full_name = f"{node_name}_activation_{attribute}"
+            if full_name in activation_initializers:
+                if attribute == "scale":
+                    value = np.array([value], dtype=np.float32)
+                elif attribute == "zero_point":
+                    value = np.array([value], dtype=np.int8)
+                initializer = numpy_helper.from_array(value, full_name)
+                new_initializers.append(initializer)
+                print(f"Added {node_name} {attribute}={value}")
+
+    graph.initializer.extend(new_initializers)
+
+    print('** Quantized nodes **')
+    for node in model.graph.node:
+        print("name=%r type=%r input=%r output=%r" % (
+            node.name, node.op_type, node.input, node.output))
+
+    model = helper.make_model(graph, opset_imports=[
+        helper.make_opsetid('', 13),
+        helper.make_opsetid("quantize", 1)])
+
+    onnx.save(model, output_model_path)
+    print(f"Quantized model saved to {output_model_path}")
+
+
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Expected quantization mode argument.")
@@ -297,4 +481,22 @@ if __name__ == "__main__":
             quantized_biases_path = "biases/quantized_biases.json"
             output_model_path = "models/quantized_model.onnx"
             quantize(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path)
+            
+            
+        # ADDED THIS FOR ASYMMETRIC
+        elif mode == "asymmetric":  
+            prep_model_path = "models/prep_model.onnx"
+            quantized_params_path = "params/quantized_params.json"
+            quantized_activations_path = "activations/quantized_activations.json"
+            quantized_biases_path = "biases/quantized_biases.json"
+            output_model_path = "models/asymmetric_model.onnx"
+            quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path)
     
+    
+    
+    
+    
+    
+    
+
+        
