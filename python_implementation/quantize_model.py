@@ -502,7 +502,7 @@ if __name__ == "__main__":
             output_model_path = "models/quantized_model.onnx"
             quantize(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path)
 
-        elif mode == "prep_asymmetric":
+        elif mode == "prep_asymm":
             quantized_params_path = "params/quantized_params_asymm.json"
             output_prep_model_path = "models/prep_model_asymm.onnx"
             prepare(onnx_model_path, quantized_params_path, output_prep_model_path)
@@ -513,4 +513,17 @@ if __name__ == "__main__":
             quantized_activations_path = "activations/quantized_activations_asymm.json"
             quantized_biases_path = "biases/quantized_biases_asymm.json"
             output_model_path = "models/asymmetric_model.onnx"
+            quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path)
+        
+        elif mode == "prep_log":
+            quantized_params_path = "params/quantized_params_log.json"
+            output_prep_model_path = "models/prep_model_log.onnx"
+            prepare(onnx_model_path, quantized_params_path, output_prep_model_path)
+            
+        elif mode == "logarithmic":  
+            prep_model_path = "models/prep_model_log.onnx"
+            quantized_params_path = "params/quantized_params_log.json"
+            quantized_activations_path = "activations/quantized_activations_log.json"
+            quantized_biases_path = "biases/quantized_biases_log.json"
+            output_model_path = "models/logarithmic_model.onnx"
             quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path)

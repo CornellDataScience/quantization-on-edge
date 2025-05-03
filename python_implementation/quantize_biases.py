@@ -64,21 +64,25 @@ if __name__ == "__main__":
     else:
         mode = sys.argv[1]
 
+        prep_model_path, quantized_activations_path, quantized_params_path, output_quantized_biases_path = None, None, None, None
+
         if mode == "symmetric":
             prep_model_path = "models/prep_model.onnx"
             quantized_activations_path = "activations/quantized_activations.json"
             quantized_params_path = "params/quantized_params.json"
             output_quantized_biases_path = "biases/quantized_biases.json"
-            
-            quantize_biases(prep_model_path, quantized_activations_path, quantized_params_path, output_quantized_biases_path)
-            print(f"Quantized {quantized_activations_path}, {quantized_params_path} -> {output_quantized_biases_path} (32-bit)")
 
         elif mode == "asymmetric":
             prep_model_path = "models/prep_model_asymm.onnx"
             quantized_activations_path = "activations/quantized_activations_asymm.json"
             quantized_params_path = "params/quantized_params_asymm.json"
             output_quantized_biases_path = "biases/quantized_biases_asymm.json"
-            
-            quantize_biases(prep_model_path, quantized_activations_path, quantized_params_path, output_quantized_biases_path)
-            print(f"Quantized {quantized_activations_path}, {quantized_params_path} -> {output_quantized_biases_path} (32-bit)")
     
+        elif mode == "logarithmic":
+            prep_model_path = "models/prep_model_log.onnx"
+            quantized_activations_path = "activations/quantized_activations_log.json"
+            quantized_params_path = "params/quantized_params_log.json"
+            output_quantized_biases_path = "biases/quantized_biases_log.json"
+            
+        quantize_biases(prep_model_path, quantized_activations_path, quantized_params_path, output_quantized_biases_path)
+        print(f"Quantized {quantized_activations_path}, {quantized_params_path} -> {output_quantized_biases_path} (32-bit)")

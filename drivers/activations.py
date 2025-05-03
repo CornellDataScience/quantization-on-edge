@@ -13,9 +13,14 @@ if __name__ == "__main__":
         if mode == "symmetric":
             onnx_model_path = "models/prep_model.onnx"
             formatted_activations_file = "activations/prep_activations.json"
+
         elif mode == "asymmetric":
             onnx_model_path = "models/prep_model_asymm.onnx"
             formatted_activations_file = "activations/prep_activations_asymm.json"
+        
+        elif mode == "logarithmic":
+            onnx_model_path = "models/prep_model_log.onnx"
+            formatted_activations_file = "activations/prep_activations_log.json"
 
         onnx_model = onnx.load(onnx_model_path)
         extract_activations(onnx_model, formatted_activations_file)

@@ -71,6 +71,7 @@ def create_inference_session(onnx_model_path, hasCustom):
         onnx_model.opset_import.append(new_opset)
 
         so = ort.SessionOptions()
+        so.log_severity_level = 3 # only errors (default 2)
         so.register_custom_ops_library(get_library_path())
         session = ort.InferenceSession(onnx_model.SerializeToString(), so)
     else:
@@ -94,7 +95,7 @@ if __name__ == "__main__":
     print(f"Unquantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
     print(f"Unquantized average time: {avg_time:.4f} ms")
 
-    # Quantized (post-training static, symmetric)
+    # Quantized (post-training static, symmetric linear)
     onnx_model_path = "models/quantized_model.onnx"
 
     model_size = os.path.getsize(onnx_model_path)
@@ -106,7 +107,7 @@ if __name__ == "__main__":
     print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
     print(f"Quantized average time: {avg_time:.4f} ms")
 
-    # Quantized (post-training static, asymmetric)
+    # Quantized (post-training static, asymmetric linear)
     onnx_model_path = "models/asymmetric_model.onnx"
 
     model_size = os.path.getsize(onnx_model_path)
@@ -114,6 +115,18 @@ if __name__ == "__main__":
     accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
 
     print("** ASYMMETRIC **")
+    print(f"Quantized model size: {model_size} bytes")
+    print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
+    print(f"Quantized average time: {avg_time:.4f} ms")
+
+    # Quantized (post-training static, asymmetric logarithmic)
+    onnx_model_path = "models/logarithmic_model.onnx"
+
+    model_size = os.path.getsize(onnx_model_path)
+    model, session = create_inference_session(onnx_model_path, hasCustom=True)
+    accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
+
+    print("** LOGARITHMIC **")
     print(f"Quantized model size: {model_size} bytes")
     print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
     print(f"Quantized average time: {avg_time:.4f} ms")

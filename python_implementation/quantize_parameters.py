@@ -1,11 +1,13 @@
 import json
 import numpy as np
 from linear_quantization import linear_quantize_data, linear_quantize_data_asymm
+from logarithmic_quantization import logarithmic_quantize_data
 import sys
 
-def quantize_parameters(input_path, output_path, bit_size, is_symm):
+def quantize_parameters(input_path, output_path, bit_size, is_symm, is_log):
     '''
     Quantize model parameters stored in a JSON file and save the quantized parameters to another JSON file.
+    Requires 'is_symm' to be True if 'is_log' is True.
 
     Input
     -----
@@ -13,6 +15,7 @@ def quantize_parameters(input_path, output_path, bit_size, is_symm):
     output_path : file path where the quantized parameters JSON file will be saved
     bit_size : number of bits used for quantization
     is_symm : True for symmetric quantization; False otherwise
+    is_log : True for logarithmic quantization; False otherwise
     
     Output
     -----
@@ -37,7 +40,11 @@ def quantize_parameters(input_path, output_path, bit_size, is_symm):
                     "to_quantize": True
                 }
             else: # asymmetric
-                Q, S, Z = linear_quantize_data_asymm(param_array, bit_size)
+                Q, S, Z = None, None, None
+                if is_log: # logarithmic
+                    Q, S, Z = logarithmic_quantize_data(param_array, bit_size)
+                else: # linear
+                    Q, S, Z = linear_quantize_data_asymm(param_array, bit_size)
                 
                 quantized_params[param_name] = {
                     "data": Q.tolist(),
@@ -45,7 +52,7 @@ def quantize_parameters(input_path, output_path, bit_size, is_symm):
                     "zero_point": np.uint8(Z).item(), # FIXME float?
                     "to_quantize": True
                 }
-        else:
+        else: # don't need to quantize
             quantized_params[param_name] = {
                 "data": param_array.tolist(),
                 "to_quantize": False
@@ -65,9 +72,15 @@ if __name__ == "__main__":
 
         if mode == "symmetric":
             output_json = "params/quantized_params.json" 
-            quantize_parameters(input_json, output_json, bit_size, is_symm=True)
+            quantize_parameters(input_json, output_json, bit_size, is_symm=True, is_log=False)
             print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")
+
         elif mode == "asymmetric":
             output_json = "params/quantized_params_asymm.json"
-            quantize_parameters(input_json, output_json, bit_size, is_symm=False)
+            quantize_parameters(input_json, output_json, bit_size, is_symm=False, is_log=False)
+            print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")
+
+        elif mode == "logarithmic":
+            output_json = "params/quantized_params_log.json"
+            quantize_parameters(input_json, output_json, bit_size, is_symm=False, is_log=True)
             print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")
