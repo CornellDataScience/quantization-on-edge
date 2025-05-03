@@ -60,7 +60,7 @@ def prepare(onnx_model_path, quantized_params_path, output_prep_model_path):
 
 def quantize(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path):
     '''
-    Quantize ONNX model and save quantized model
+    Quantize ONNX model (using symmetric quantization scheme) and save quantized model
 
     Input
     -----
@@ -94,7 +94,7 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
         if tensor.name in params:
             if params[tensor.name]["to_quantize"]: # Only quantize weights, not biases
                 # Retrieve quantization params from JSON
-                quantized_weight = np.array(params[tensor.name]["data"], dtype=np.int8)
+                quantized_weight = np.array(params[tensor.name]["data"], dtype=np.int8) # signed
                 scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
                 zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.int8)
 
@@ -144,7 +144,7 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
     Z = quantize_node_name + "_activation_zero_point"
     output_name = "quantized_input"
     quantize_node = helper.make_node(name=quantize_node_name, 
-                                    op_type="Quantize", 
+                                    op_type="SymmQuantize", 
                                     inputs=[input_name, s_x, Z], 
                                     outputs=[output_name], 
                                     domain="ai.onnx.contrib")
@@ -228,7 +228,7 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
     Z = prev_node.name + "_activation_zero_point"
     output_name = "output"
     dequantize_node = helper.make_node(name="DequantizeLayer", 
-                                    op_type="Dequantize", 
+                                    op_type="SymmDequantize", 
                                     inputs=[input_name, s_x, Z], 
                                     outputs=[output_name], 
                                     domain="ai.onnx.contrib")
@@ -278,8 +278,10 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
     onnx.save(model, output_model_path)
     print(f"Quantized model saved to {output_model_path}")
 
-
 def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path):
+    '''
+    Quantize ONNX model (using asymmetric quantization scheme) and save quantized model
+    '''
     # Load unquantized model
     model = onnx.load(prep_model_path)
     graph = model.graph
@@ -298,9 +300,9 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
     for tensor in graph.initializer:
         if tensor.name in params:
             if params[tensor.name]["to_quantize"]:
-                quantized_weight = np.array(params[tensor.name]["data"], dtype=np.int8)
+                quantized_weight = np.array(params[tensor.name]["data"], dtype=np.uint8) # unsigned
                 scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
-                zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.int8)
+                zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.uint8)
 
                 quantized_weight_initializer = numpy_helper.from_array(quantized_weight, tensor.name)
                 quant_scale = numpy_helper.from_array(scale, tensor.name + "_scale")
@@ -334,7 +336,7 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
     Z = quantize_node_name + "_activation_zero_point"
     output_name = "quantized_input"
     quantize_node = helper.make_node(name=quantize_node_name,
-                                     op_type="Quantize",
+                                     op_type="AsymmQuantize",
                                      inputs=[input_name, s_x, Z],
                                      outputs=[output_name],
                                      domain="ai.onnx.contrib")
@@ -378,33 +380,30 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
             z_x = prev_node.name + "_activation_zero_point"
             z_W = W + "_zero_point"
 
-
             if i < len(graph_nodes) - 2:
                 relu_node = graph_nodes[i + 2]
                 s_R = relu_node.name + "_activation_scale"
 
                 # ADDED OUTPUT ZERO POINT
-                # z_R = relu_node.name + "_activation_zero_point"
+                z_R = relu_node.name + "_activation_zero_point"
 
                 output = relu_node.output[0]
 
                 # USE ASYMM OP AND EXTRA INPUTS
                 fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "AsymmMatMulAddReLUFusion",
                                               op_type="AsymmMatMulAddReLUFusion",
-                                              inputs=[x, W, b, s_x, s_W, s_R, z_x, z_W],
+                                              inputs=[x, W, b, s_x, s_W, s_R, z_x, z_W, z_R], # ADDED z_R
                                               outputs=[output],
                                               domain="ai.onnx.contrib")
-                
-                
-                
 
                 added_nodes.append(fused_node)
                 removed_nodes.extend([matmul_node, add_node, relu_node])
 
-                # activation_initializers.update([s_R, z_R])
-                activation_initializers.update([s_R])
-            else:
-                s_b = add_node.name + "_activation_scale"
+                # activation_initializers.update([s_R])
+                activation_initializers.update([s_R, z_R])
+
+            else: # Node is the last matmul node before output
+                # s_b = add_node.name + "_activation_scale"
 
                 # HANDLE OUTPUT ZERO POINT
                 # z_b = add_node.name + "_activation_zero_point"
@@ -414,13 +413,15 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
                 # USE ASYMM OP AND EXTRA INPUTS
                 fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "AsymmMatMulAddFusion",
                                               op_type="AsymmMatMulAddFusion",
-                                              inputs=[x, W, b, s_x, s_W, s_b, z_x, z_W],
+                                              inputs=[x, W, b, s_x, s_W, s_R, z_x, z_W, z_R], # ADDED z_b
                                               outputs=[output],
                                               domain="ai.onnx.contrib")
                 # --- END ASYMMETRIC CHANGE ---
 
                 added_nodes.append(fused_node)
                 removed_nodes.extend([matmul_node, add_node])
+
+                # activation_initializers.add(z_b) # ADDED
 
             activation_initializers.update([s_x, z_x, z_W])
 
@@ -433,7 +434,7 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
     Z = prev_node.name + "_activation_zero_point"
     output_name = "output"
     dequantize_node = helper.make_node(name="DequantizeLayer",
-                                       op_type="Dequantize",
+                                       op_type="AsymmDequantize",
                                        inputs=[input_name, s_x, Z],
                                        outputs=[output_name],
                                        domain="ai.onnx.contrib")
@@ -460,7 +461,7 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
                 if attribute == "scale":
                     value = np.array([value], dtype=np.float32)
                 elif attribute == "zero_point":
-                    value = np.array([value], dtype=np.int8)
+                    value = np.array([value], dtype=np.uint8) # CHANGED from int8
                 initializer = numpy_helper.from_array(value, full_name)
                 new_initializers.append(initializer)
                 print(f"Added {node_name} {attribute}={value}")
@@ -480,19 +481,19 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
     print(f"Quantized model saved to {output_model_path}")
 
 
-
-
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Expected quantization mode argument.")
     else:
         mode = sys.argv[1]
 
+        onnx_model_path = "models/model.onnx"
+
         if mode == "prep":
-            onnx_model_path = "models/model.onnx"
             quantized_params_path = "params/quantized_params.json"
             output_prep_model_path = "models/prep_model.onnx"
             prepare(onnx_model_path, quantized_params_path, output_prep_model_path)
+
         elif mode == "symmetric":
             prep_model_path = "models/prep_model.onnx"
             quantized_params_path = "params/quantized_params.json"
@@ -500,22 +501,16 @@ if __name__ == "__main__":
             quantized_biases_path = "biases/quantized_biases.json"
             output_model_path = "models/quantized_model.onnx"
             quantize(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path)
+
+        elif mode == "prep_asymmetric":
+            quantized_params_path = "params/quantized_params_asymm.json"
+            output_prep_model_path = "models/prep_model_asymm.onnx"
+            prepare(onnx_model_path, quantized_params_path, output_prep_model_path)
             
-            
-        # ADDED THIS FOR ASYMMETRIC
         elif mode == "asymmetric":  
-            prep_model_path = "models/prep_model.onnx"
-            quantized_params_path = "params/quantized_params.json"
-            quantized_activations_path = "activations/quantized_activations.json"
-            quantized_biases_path = "biases/quantized_biases.json"
+            prep_model_path = "models/prep_model_asymm.onnx"
+            quantized_params_path = "params/quantized_params_asymm.json"
+            quantized_activations_path = "activations/quantized_activations_asymm.json"
+            quantized_biases_path = "biases/quantized_biases_asymm.json"
             output_model_path = "models/asymmetric_model.onnx"
             quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path)
-    
-    
-    
-    
-    
-    
-    
-
-        

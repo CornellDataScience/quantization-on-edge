@@ -2,7 +2,6 @@ import onnx
 import onnxruntime as ort
 from onnxruntime_extensions import get_library_path
 import numpy as np
-import tensorflow as tf
 import tensorflow_datasets as tfds
 import time
 import os
@@ -49,7 +48,6 @@ def test(onnx_model, inference_session, dataset_name, num_samples):
 
     return num_correct / num_samples, num_samples, (total_time / num_samples * 1000)
 
-
 def create_inference_session(onnx_model_path, hasCustom):
     '''
     Load ONNX model and create inference session
@@ -77,7 +75,7 @@ def create_inference_session(onnx_model_path, hasCustom):
         session = ort.InferenceSession(onnx_model.SerializeToString(), so)
     else:
         session = ort.InferenceSession(onnx_model.SerializeToString())
-
+        
     return onnx_model, session
 
 if __name__ == "__main__":
@@ -91,27 +89,31 @@ if __name__ == "__main__":
     model, session = create_inference_session(onnx_model_path, hasCustom=False)
     accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
 
+    print("** BASELINE **")
     print(f"Unquantized model size: {model_size} bytes")
     print(f"Unquantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
     print(f"Unquantized average time: {avg_time:.4f} ms")
 
-    # Quantized (post-training static)
+    # Quantized (post-training static, symmetric)
     onnx_model_path = "models/quantized_model.onnx"
 
     model_size = os.path.getsize(onnx_model_path)
     model, session = create_inference_session(onnx_model_path, hasCustom=True)
     accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
 
+    print("** SYMMETRIC **")
     print(f"Quantized model size: {model_size} bytes")
     print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
     print(f"Quantized average time: {avg_time:.4f} ms")
 
+    # Quantized (post-training static, asymmetric)
     onnx_model_path = "models/asymmetric_model.onnx"
 
     model_size = os.path.getsize(onnx_model_path)
     model, session = create_inference_session(onnx_model_path, hasCustom=True)
     accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
 
+    print("** ASYMMETRIC **")
     print(f"Quantized model size: {model_size} bytes")
     print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
     print(f"Quantized average time: {avg_time:.4f} ms")
