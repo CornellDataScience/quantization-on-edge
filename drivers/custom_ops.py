@@ -1,4 +1,5 @@
 from onnxruntime_extensions import onnx_op, PyCustomOpDef
+from scipy.signal import convolve2d
 import numpy as np
 
 # Create and register custom ONNX operators
@@ -82,5 +83,34 @@ def AsymmQuantize(x, s_x, Z):
          outputs=[PyCustomOpDef.dt_float])
 def AsymmDequantize(x, s_x, Z):
     return np.array(s_x * (x - Z), dtype=np.float32)
+
+@onnx_op(op_type="ConvBNReLUFusion",
+        inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
+        outputs=[PyCustomOpDef.dt_float])
+def ConvBNReLUFusion(X, W, b, scale, bias, mean, var, eps):
+    N, Cin, H, W_in = X.shape
+    Cout, _, kH, kW = W.shape
+    Hout = H - kH + 1
+    Wout = W_in - kW + 1
+
+    # Convolution
+    Y = np.zeros((N, Cout, Hout, Wout), dtype=np.float32)
+    for n in range(N):
+        for cout in range(Cout):
+            acc = np.zeros((Hout, Wout), dtype=np.float32)
+            for cin in range(Cin):
+                acc += convolve2d(
+                    X[n, cin],            
+                    W[cout, cin],         
+                    mode='valid'
+                )
+            Y[n, cout] = acc + b[cout]
+
+    # Batch-norm
+    invstd = 1.0 / np.sqrt(var + eps)
+    Y = (Y - mean[None,:,None,None]) * invstd[None,:,None,None] * scale[None,:,None,None] + bias[None,:,None,None]
+
+    # Relu
+    return np.maximum(Y, 0.0).astype(np.float32)
 
 print("Custom operators registered successfully.")
