@@ -4,8 +4,7 @@ from onnxruntime_extensions import onnx_op, PyCustomOpDef, get_library_path
 import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
-import time
-import os
+# import python_implementation.linear_quantization as lq
 
 # Create and register custom ONNX operators
 @onnx_op(op_type="SymmMatMulAddReLUFusion",
@@ -38,6 +37,26 @@ def Quantize(x, s_x, Z):
          outputs=[PyCustomOpDef.dt_float])
 def Dequantize(x, s_x, Z):
     return np.array(s_x * (x - Z), dtype=np.float32)
+
+@onnx_op(op_type = "QuantDequant",
+         inputs =[PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
+         outputs=[PyCustomOpDef.dt_float])
+def QuantDequant(data, bit_size):
+    data = np.asarray(data, dtype=np.float32)
+    r_min, r_max = np.min(data), np.max(data)
+
+    if r_min == r_max:
+        return 1.0, 0
+    
+    S = (r_max - r_min)/(2**bit_size - 1)
+    Z = 0 
+
+    Q = np.clip(np.round(data / S + Z), -2**(bit_size-1), 2**(bit_size-1) - 1)
+
+    return (Q - Z) * S
+    
+    # _, S, Z = lq.linear_quantize_data(data, bit_size)
+    # return lq.linear_dequantize_data(data, S, Z)
 
 def test(onnx_model, inference_session, dataset_name, num_samples):
     '''
@@ -112,6 +131,11 @@ def create_inference_session(onnx_model_path, hasCustom):
     return onnx_model, session
 
 if __name__ == "__main__":
+    onnx_model_path = "models/qat_model.onnx"
+
+    hasCustom = True
+    model, session = create_inference_session(onnx_model_path, hasCustom)
+    
     dataset_name = "mnist"
     num_samples = None
 
