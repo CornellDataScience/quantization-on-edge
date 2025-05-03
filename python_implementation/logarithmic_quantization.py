@@ -1,5 +1,7 @@
 import numpy as np
 
+shift = 0
+
 def logarithmic_quantize_data(data, bit_size, base=2):
     '''
     Logarithmically quantizes the input data.
@@ -20,7 +22,9 @@ def logarithmic_quantize_data(data, bit_size, base=2):
     data = np.asarray(data, dtype=np.float32)
     
     if np.any(data <= 0):
-        raise ValueError("Logarithmic quantization requires all data > 0.")
+        # raise ValueError("Logarithmic quantization requires all data > 0.")
+        shift = abs(np.min(data)) + 1e-6
+        data = data + shift
     
     # Convert to logarithmic scale (base `base`)
     log_data = np.log(data) / np.log(base)
@@ -52,4 +56,4 @@ def logarithmic_dequantize_data(Q, S, rmin, base=2):
     Returns the dequantized data as a float array
     '''
     log_data = Q * S + rmin
-    return base ** log_data
+    return base ** log_data - shift

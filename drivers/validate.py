@@ -1,43 +1,11 @@
 import onnx
 import onnxruntime as ort
-from onnxruntime_extensions import onnx_op, PyCustomOpDef, get_library_path
+from onnxruntime_extensions import get_library_path
 import numpy as np
-import tensorflow as tf
 import tensorflow_datasets as tfds
 import time
 import os
-
-# Create and register custom ONNX operators
-@onnx_op(op_type="SymmMatMulAddReLUFusion",
-         inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int32, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
-         outputs=[PyCustomOpDef.dt_int8])
-def SymmMatMulAddReLUFusion(x, W, b, s_x, s_W, s_R):
-    x = x.copy().astype(np.int32)
-    W = W.copy().astype(np.int32)
-    M = (s_x * s_W) / s_R
-    return np.array(M * (np.maximum(np.matmul(x, W) + b, 0)), dtype=np.int8)
-
-@onnx_op(op_type="SymmMatMulAddFusion",
-         inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int32, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
-         outputs=[PyCustomOpDef.dt_int8])
-def SymmMatMulAddFusion(x, W, b, s_x, s_W, s_b):
-    x = x.copy().astype(np.int32)
-    W = W.copy().astype(np.int32)
-    M = (s_x * s_W) / s_b
-    return np.array(M * (np.matmul(x, W) + b), dtype=np.int8)
-
-@onnx_op(op_type="Quantize",
-         inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
-         outputs=[PyCustomOpDef.dt_int8])
-def Quantize(x, s_x, Z):
-    bit_size = 8
-    return np.array(np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1), dtype=np.int8)
-
-@onnx_op(op_type="Dequantize",
-         inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
-         outputs=[PyCustomOpDef.dt_float])
-def Dequantize(x, s_x, Z):
-    return np.array(s_x * (x - Z), dtype=np.float32)
+import custom_ops
 
 def test(onnx_model, inference_session, dataset_name, num_samples):
     '''
@@ -80,7 +48,6 @@ def test(onnx_model, inference_session, dataset_name, num_samples):
 
     return num_correct / num_samples, num_samples, (total_time / num_samples * 1000)
 
-
 def create_inference_session(onnx_model_path, hasCustom):
     '''
     Load ONNX model and create inference session
@@ -104,11 +71,12 @@ def create_inference_session(onnx_model_path, hasCustom):
         onnx_model.opset_import.append(new_opset)
 
         so = ort.SessionOptions()
+        so.log_severity_level = 3 # only errors (default 2)
         so.register_custom_ops_library(get_library_path())
         session = ort.InferenceSession(onnx_model.SerializeToString(), so)
     else:
         session = ort.InferenceSession(onnx_model.SerializeToString())
-
+        
     return onnx_model, session
 
 if __name__ == "__main__":
@@ -122,17 +90,43 @@ if __name__ == "__main__":
     model, session = create_inference_session(onnx_model_path, hasCustom=False)
     accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
 
+    print("** BASELINE **")
     print(f"Unquantized model size: {model_size} bytes")
     print(f"Unquantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
     print(f"Unquantized average time: {avg_time:.4f} ms")
 
-    # Quantized (post-training static)
+    # Quantized (post-training static, symmetric linear)
     onnx_model_path = "models/quantized_model.onnx"
 
     model_size = os.path.getsize(onnx_model_path)
     model, session = create_inference_session(onnx_model_path, hasCustom=True)
     accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
 
+    print("** SYMMETRIC **")
+    print(f"Quantized model size: {model_size} bytes")
+    print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
+    print(f"Quantized average time: {avg_time:.4f} ms")
+
+    # Quantized (post-training static, asymmetric linear)
+    onnx_model_path = "models/asymmetric_model.onnx"
+
+    model_size = os.path.getsize(onnx_model_path)
+    model, session = create_inference_session(onnx_model_path, hasCustom=True)
+    accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
+
+    print("** ASYMMETRIC **")
+    print(f"Quantized model size: {model_size} bytes")
+    print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
+    print(f"Quantized average time: {avg_time:.4f} ms")
+
+    # Quantized (post-training static, asymmetric logarithmic)
+    onnx_model_path = "models/logarithmic_model.onnx"
+
+    model_size = os.path.getsize(onnx_model_path)
+    model, session = create_inference_session(onnx_model_path, hasCustom=True)
+    accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
+
+    print("** LOGARITHMIC **")
     print(f"Quantized model size: {model_size} bytes")
     print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
     print(f"Quantized average time: {avg_time:.4f} ms")
