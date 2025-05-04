@@ -111,7 +111,7 @@ if __name__ == "__main__":
     print(f"Quantized average time: {avg_time:.4f} ms")
 
     # Quantized (post-training dynamic, symmetric linear)
-    onnx_model_path = "models/dyn_quantized_model.onnx"
+    onnx_model_path = "models/dynamic_quantized_model.onnx"
 
     model_size = os.path.getsize(onnx_model_path)
     model, session = create_inference_session(onnx_model_path, hasCustom=True)
@@ -124,6 +124,7 @@ if __name__ == "__main__":
 
     print()
 
+    print("** ASYMMETRIC **")
     # Quantized (post-training static, asymmetric linear)
     onnx_model_path = "models/asymmetric_model.onnx"
 
@@ -131,7 +132,19 @@ if __name__ == "__main__":
     model, session = create_inference_session(onnx_model_path, hasCustom=True)
     accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
 
-    print("** ASYMMETRIC **")
+    print("- Static -")
+    print(f"Quantized model size: {model_size} bytes")
+    print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
+    print(f"Quantized average time: {avg_time:.4f} ms")
+
+    # Quantized (post-training dynamic, asymmetric linear)
+    onnx_model_path = "models/dynamic_asymmetric_model.onnx"
+
+    model_size = os.path.getsize(onnx_model_path)
+    model, session = create_inference_session(onnx_model_path, hasCustom=True)
+    accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
+
+    print("- Dynamic -")
     print(f"Quantized model size: {model_size} bytes")
     print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
     print(f"Quantized average time: {avg_time:.4f} ms")

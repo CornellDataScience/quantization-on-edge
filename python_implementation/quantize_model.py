@@ -493,7 +493,6 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
             s_x = prev_node.name + "_activation_scale"
             s_W = W + "_scale"
 
-            # ADDED ZERO POINTS
             z_x = prev_node.name + "_activation_zero_point"
             z_W = W + "_zero_point"
 
@@ -501,44 +500,32 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
                 relu_node = graph_nodes[i + 2]
                 s_R = relu_node.name + "_activation_scale"
 
-                # ADDED OUTPUT ZERO POINT
                 z_R = relu_node.name + "_activation_zero_point"
 
                 output = relu_node.output[0]
 
-                # USE ASYMM OP AND EXTRA INPUTS
                 fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "AsymmMatMulAddReLUFusion",
                                               op_type="AsymmMatMulAddReLUFusion",
-                                              inputs=[x, W, b, s_x, s_W, s_R, z_x, z_W, z_R], # ADDED z_R
+                                              inputs=[x, W, b, s_x, s_W, s_R, z_x, z_W, z_R],
                                               outputs=[output],
                                               domain="ai.onnx.contrib")
 
                 added_nodes.append(fused_node)
                 removed_nodes.extend([matmul_node, add_node, relu_node])
 
-                # activation_initializers.update([s_R])
                 activation_initializers.update([s_R, z_R])
 
             else: # Node is the last matmul node before output
-                # s_b = add_node.name + "_activation_scale"
-
-                # HANDLE OUTPUT ZERO POINT
-                # z_b = add_node.name + "_activation_zero_point"
-
                 output = "quantized_output"
 
-                # USE ASYMM OP AND EXTRA INPUTS
                 fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "AsymmMatMulAddFusion",
                                               op_type="AsymmMatMulAddFusion",
-                                              inputs=[x, W, b, s_x, s_W, s_R, z_x, z_W, z_R], # ADDED z_b
+                                              inputs=[x, W, b, s_x, s_W, s_R, z_x, z_W, z_R],
                                               outputs=[output],
                                               domain="ai.onnx.contrib")
-                # --- END ASYMMETRIC CHANGE ---
 
                 added_nodes.append(fused_node)
                 removed_nodes.extend([matmul_node, add_node])
-
-                # activation_initializers.add(z_b) # ADDED
 
             activation_initializers.update([s_x, z_x, z_W])
 
@@ -597,6 +584,105 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
     onnx.save(model, output_model_path)
     print(f"Quantized model saved to {output_model_path}")
 
+def quantize_asymmetric_dynamic(prep_model_path, quantized_params_path, output_model_path):
+    '''
+    Quantize ONNX model (using dynamic asymmetric quantization scheme) and save quantized model
+    '''
+    # Load unquantized model
+    model = onnx.load(prep_model_path)
+    graph = model.graph
+
+    print('** Original nodes **')
+    for node in model.graph.node:
+        print("name=%r type=%r input=%r output=%r" % (
+            node.name, node.op_type, node.input, node.output))
+
+    new_initializers = []
+
+    # Load params JSON
+    with open(quantized_params_path) as f:
+        params = json.load(f)
+
+    for tensor in graph.initializer:
+        if tensor.name in params:
+            if params[tensor.name]["to_quantize"]:
+                quantized_weight = np.array(params[tensor.name]["data"], dtype=np.uint8) # unsigned
+                scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
+                zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.uint8)
+
+                quantized_weight_initializer = numpy_helper.from_array(quantized_weight, tensor.name)
+                quant_scale = numpy_helper.from_array(scale, tensor.name + "_scale")
+                quant_zero_point = numpy_helper.from_array(zero_point, tensor.name + "_zero_point")
+
+                tensor.CopyFrom(quantized_weight_initializer)
+                new_initializers.extend([quant_scale, quant_zero_point])
+                print(f"Added {tensor.name} scale={scale[0]} and zero_point={zero_point[0]}")
+
+    added_nodes = []
+    removed_nodes = []
+    activation_initializers = set()
+    graph_nodes = graph.node
+
+    for i, node in enumerate(graph_nodes):    
+        if node.op_type == "MatMul":
+            matmul_node = node
+            add_node = graph_nodes[i + 1]
+
+            x = matmul_node.input[0]
+            W = matmul_node.input[1]
+            b = add_node.input[1]
+            s_W = W + "_scale"
+            z_W = W + "_zero_point"
+
+            if i < len(graph_nodes) - 2:
+                relu_node = graph_nodes[i + 2]
+
+                output = relu_node.output[0]
+
+                fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "DynAsymmMatMulAddReLUFusion",
+                                              op_type="DynAsymmMatMulAddReLUFusion",
+                                              inputs=[x, W, b, s_W, z_W],
+                                              outputs=[output],
+                                              domain="ai.onnx.contrib")
+
+                added_nodes.append(fused_node)
+                removed_nodes.extend([matmul_node, add_node, relu_node])
+
+            else: # Node is the last matmul node before output
+                output = add_node.output[0]
+
+                fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "DynAsymmMatMulAddFusion",
+                                              op_type="DynAsymmMatMulAddFusion",
+                                              inputs=[x, W, b, s_W, z_W],
+                                              outputs=[output],
+                                              domain="ai.onnx.contrib")
+
+                added_nodes.append(fused_node)
+                removed_nodes.extend([matmul_node, add_node])
+
+            activation_initializers.update([z_W])
+
+    for node in removed_nodes:
+        if node in graph.node:
+            graph.node.remove(node)
+
+    for node in added_nodes:
+        if node not in graph.node:
+            graph.node.append(node)
+
+    graph.initializer.extend(new_initializers)
+
+    print('** Quantized nodes **')
+    for node in model.graph.node:
+        print("name=%r type=%r input=%r output=%r" % (
+            node.name, node.op_type, node.input, node.output))
+
+    model = helper.make_model(graph, opset_imports=[
+        helper.make_opsetid('', 13),
+        helper.make_opsetid("ai.onnx.contrib", 1)])
+
+    onnx.save(model, output_model_path)
+    print(f"Quantized model saved to {output_model_path}")
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
@@ -622,7 +708,7 @@ if __name__ == "__main__":
         elif mode == "dyn_symmetric":
             prep_model_path = "models/prep_model.onnx"
             quantized_params_path = "params/quantized_params.json"
-            output_model_path = "models/dyn_quantized_model.onnx"
+            output_model_path = "models/dynamic_quantized_model.onnx"
             quantize_dynamic(prep_model_path, quantized_params_path, output_model_path)
 
         elif mode == "prep_asymm":
@@ -637,6 +723,12 @@ if __name__ == "__main__":
             quantized_biases_path = "biases/quantized_biases_asymm.json"
             output_model_path = "models/asymmetric_model.onnx"
             quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path)
+
+        elif mode == "dyn_asymmetric":
+            prep_model_path = "models/prep_model_asymm.onnx"
+            quantized_params_path = "params/quantized_params_asymm.json"
+            output_model_path = "models/dynamic_asymmetric_model.onnx"
+            quantize_asymmetric_dynamic(prep_model_path, quantized_params_path, output_model_path)
         
         elif mode == "prep_log":
             quantized_params_path = "params/quantized_params_log.json"
