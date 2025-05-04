@@ -5,6 +5,8 @@ import numpy as np
 import tensorflow as tf
 import tensorflow_datasets as tfds
 # import python_implementation.linear_quantization as lq
+import os
+import time
 
 # Create and register custom ONNX operators
 @onnx_op(op_type="SymmMatMulAddReLUFusion",
@@ -39,9 +41,10 @@ def Dequantize(x, s_x, Z):
     return np.array(s_x * (x - Z), dtype=np.float32)
 
 @onnx_op(op_type = "QuantDequant",
-         inputs =[PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
+         inputs =[PyCustomOpDef.dt_float],
          outputs=[PyCustomOpDef.dt_float])
-def QuantDequant(data, bit_size):
+def QuantDequant(data):
+    bit_size = 8
     data = np.asarray(data, dtype=np.float32)
     r_min, r_max = np.min(data), np.max(data)
 
@@ -139,24 +142,24 @@ if __name__ == "__main__":
     dataset_name = "mnist"
     num_samples = None
 
-    # Unquantized
-    onnx_model_path = "models/model.onnx"
+    # # Unquantized
+    # onnx_model_path = "models/trained_model.onnx"
 
-    model_size = os.path.getsize(onnx_model_path)
-    model, session = create_inference_session(onnx_model_path, hasCustom=False)
-    accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
+    # model_size = os.path.getsize(onnx_model_path)
+    # model, session = create_inference_session(onnx_model_path, hasCustom=False)
+    # accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
 
-    print(f"Unquantized model size: {model_size} bytes")
-    print(f"Unquantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
-    print(f"Unquantized average time: {avg_time:.4f} ms")
+    # print(f"Unquantized model size: {model_size} bytes")
+    # print(f"Unquantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
+    # print(f"Unquantized average time: {avg_time:.4f} ms")
 
-    # Quantized (post-training static)
-    onnx_model_path = "models/quantized_model.onnx"
+    # # Quantized (post-training static)
+    # onnx_model_path = "models/quantized_model.onnx"
 
-    model_size = os.path.getsize(onnx_model_path)
-    model, session = create_inference_session(onnx_model_path, hasCustom=True)
-    accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
+    # model_size = os.path.getsize(onnx_model_path)
+    # model, session = create_inference_session(onnx_model_path, hasCustom=True)
+    # accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
 
-    print(f"Quantized model size: {model_size} bytes")
-    print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
-    print(f"Quantized average time: {avg_time:.4f} ms")
+    # print(f"Quantized model size: {model_size} bytes")
+    # print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
+    # print(f"Quantized average time: {avg_time:.4f} ms")

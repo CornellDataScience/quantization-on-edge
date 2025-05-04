@@ -272,7 +272,7 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
             node.name, node.op_type, node.input, node.output))
         
     model = helper.make_model(graph, opset_imports=[
-        helper.make_opsetid('', 13), helper.make_opsetid("quantize", 1)])
+        helper.make_opsetid('', 13), helper.make_opsetid("ai.onnx.contrib", 1)])
             
     # Save quantized ONNX model
     onnx.save(model, output_model_path)
