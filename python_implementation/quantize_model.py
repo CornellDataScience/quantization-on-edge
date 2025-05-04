@@ -272,7 +272,124 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
             node.name, node.op_type, node.input, node.output))
         
     model = helper.make_model(graph, opset_imports=[
-        helper.make_opsetid('', 13), helper.make_opsetid("quantize", 1)])
+        helper.make_opsetid('', 13), helper.make_opsetid("ai.onnx.contrib", 1)])
+            
+    # Save quantized ONNX model
+    onnx.save(model, output_model_path)
+    print(f"Quantized model saved to {output_model_path}")
+
+def quantize_dynamic(prep_model_path, quantized_params_path, output_model_path):
+    '''
+    Quantize ONNX model (using dynamic symmetric quantization scheme) and save quantized model
+
+    Input
+    -----
+    prep_model_path: file path of ONNX model to quantize
+    quantized_params_path: file path of quantized parameter scalar and zero point values used to quantize
+    output_model_path: file path to save quantized model to
+    
+    Output
+    -----
+    Saves quantized model to output_model_path 
+    '''
+    # Load unquantized model
+    model = onnx.load(prep_model_path)
+    graph = model.graph
+
+    print('** Original nodes **')
+    for node in model.graph.node:
+        print("name=%r type=%r input=%r output=%r" % (
+            node.name, node.op_type, node.input, node.output))
+        
+    new_initializers = []
+        
+    # Load params JSON
+    with open(quantized_params_path) as f:
+        params = json.load(f)
+
+    # Iterate through params, add scale
+    for tensor in graph.initializer:
+        if tensor.name in params:
+            if params[tensor.name]["to_quantize"]: # Only quantize weights, not biases
+                # Retrieve quantization params from JSON
+                quantized_weight = np.array(params[tensor.name]["data"], dtype=np.int8) # signed
+                scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
+
+                # Convert to ONNX tensors
+                quantized_weight_initializer = numpy_helper.from_array(quantized_weight, tensor.name)
+                quant_scale = numpy_helper.from_array(scale, tensor.name + "_scale")
+
+                # Replace original weight with quantized weight
+                tensor.CopyFrom(quantized_weight_initializer)
+
+                # Add quantized initializer and scale/zero-point tensors
+                new_initializers.extend([quant_scale])
+
+                print(f"Added {tensor.name} scale={scale[0]}")
+
+    # Iterate through nodes, replace with custom quantization nodes
+    added_nodes = []
+    removed_nodes = []
+
+    graph_nodes = graph.node
+    
+    for i,node in enumerate(graph_nodes):
+        print(node.name)
+        print([node.name for node in added_nodes])
+        print([node.name for node in removed_nodes])
+        print()
+        if node.op_type == "MatMul":
+            matmul_node = node
+            add_node = graph_nodes[i + 1]
+
+            x = matmul_node.input[0]
+            W = matmul_node.input[1]
+            b = add_node.input[1]
+            s_W = W + "_scale"
+
+            if i < len(graph_nodes) - 2:
+                relu_node = graph_nodes[i + 2]
+
+                output = relu_node.output[0]
+                
+                matmul_add_relu_fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "DynSymmMatMulAddReLUFusion", 
+                                                        op_type="DynSymmMatMulAddReLUFusion", 
+                                                        inputs=[x, W, b, s_W], 
+                                                        outputs=[output], 
+                                                        domain="ai.onnx.contrib")
+                added_nodes.append(matmul_add_relu_fused_node)
+                removed_nodes.append(relu_node)
+            else: # Node is the last matmul node before output
+                output = add_node.output[0]
+
+                matmul_add_fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "DynSymmMatMulAddFusion", 
+                                                        op_type="DynSymmMatMulAddFusion", 
+                                                        inputs=[x, W, b, s_W], 
+                                                        outputs=[output], 
+                                                        domain="ai.onnx.contrib")
+                added_nodes.append(matmul_add_fused_node)
+                
+            removed_nodes.append(matmul_node)
+            removed_nodes.append(add_node)
+
+    # Replace nodes in graph
+    for node in removed_nodes:
+        if node in graph.node:
+            graph.node.remove(node)
+        
+    for node in added_nodes:
+        if node not in graph.node:
+            graph.node.append(node)
+        
+    graph.initializer.extend(new_initializers)
+
+    print('** Quantized nodes **')
+    for node in model.graph.node:
+        print("name=%r type=%r input=%r output=%r" % (
+            node.name, node.op_type, node.input, node.output))
+        
+    model = helper.make_model(graph, opset_imports=[
+        helper.make_opsetid('', 13), helper.make_opsetid("ai.onnx.contrib", 1)])
             
     # Save quantized ONNX model
     onnx.save(model, output_model_path)
@@ -475,7 +592,7 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
 
     model = helper.make_model(graph, opset_imports=[
         helper.make_opsetid('', 13),
-        helper.make_opsetid("quantize", 1)])
+        helper.make_opsetid("ai.onnx.contrib", 1)])
 
     onnx.save(model, output_model_path)
     print(f"Quantized model saved to {output_model_path}")
@@ -501,6 +618,12 @@ if __name__ == "__main__":
             quantized_biases_path = "biases/quantized_biases.json"
             output_model_path = "models/quantized_model.onnx"
             quantize(prep_model_path, quantized_params_path, quantized_activations_path, quantized_biases_path, output_model_path)
+
+        elif mode == "dyn_symmetric":
+            prep_model_path = "models/prep_model.onnx"
+            quantized_params_path = "params/quantized_params.json"
+            output_model_path = "models/dyn_quantized_model.onnx"
+            quantize_dynamic(prep_model_path, quantized_params_path, output_model_path)
 
         elif mode == "prep_asymm":
             quantized_params_path = "params/quantized_params_asymm.json"
