@@ -96,20 +96,18 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
                 # Retrieve quantization params from JSON
                 quantized_weight = np.array(params[tensor.name]["data"], dtype=np.int8) # signed
                 scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
-                zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.int8)
 
                 # Convert to ONNX tensors
                 quantized_weight_initializer = numpy_helper.from_array(quantized_weight, tensor.name)
                 quant_scale = numpy_helper.from_array(scale, tensor.name + "_scale")
-                quant_zero_point = numpy_helper.from_array(zero_point, tensor.name + "_zero_point")
 
                 # Replace original weight with quantized weight
                 tensor.CopyFrom(quantized_weight_initializer)
 
-                # Add quantized initializer and scale/zero-point tensors
-                new_initializers.extend([quant_scale, quant_zero_point])
+                # Add quantization scale tensors
+                new_initializers.extend([quant_scale])
 
-                print(f"Added {tensor.name} scale={scale[0]} and zero_point={zero_point[0]}")
+                print(f"Added {tensor.name} scale={scale[0]}")
 
     # Load biases JSON
     with open(quantized_biases_path) as f:
@@ -141,17 +139,15 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
     quantize_node_name = "QuantizeLayer"
     input_name = graph.input[0].name
     s_x = quantize_node_name + "_activation_scale"
-    Z = quantize_node_name + "_activation_zero_point"
     output_name = "quantized_input"
     quantize_node = helper.make_node(name=quantize_node_name, 
                                     op_type="SymmQuantize", 
-                                    inputs=[input_name, s_x, Z], 
+                                    inputs=[input_name, s_x], 
                                     outputs=[output_name], 
                                     domain="ai.onnx.contrib")
     
     added_nodes.append(quantize_node)
     activation_initializers.add(s_x)
-    activation_initializers.add(Z)
 
     prev_node = quantize_node
     
@@ -164,7 +160,6 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
             input_name = "quantized_input"
             shape_initializer = node.input[1]
             s_x = node.name + "_activation_scale"
-            Z = node.name + "_activation_zero_point"
             output_name = node.output[0]
             new_head = helper.make_node(name=node.name, 
                                         op_type=node.op_type, 
@@ -176,7 +171,6 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
             removed_nodes.append(node)
 
             activation_initializers.add(s_x)
-            activation_initializers.add(Z)
             
         if node.op_type == "MatMul":
             matmul_node = node
@@ -225,16 +219,14 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
     # Add node to dequantize model output
     input_name = "quantized_output"
     s_x = prev_node.name + "_activation_scale"
-    Z = prev_node.name + "_activation_zero_point"
     output_name = "output"
     dequantize_node = helper.make_node(name="DequantizeLayer", 
                                     op_type="SymmDequantize", 
-                                    inputs=[input_name, s_x, Z], 
+                                    inputs=[input_name, s_x], 
                                     outputs=[output_name], 
                                     domain="ai.onnx.contrib")
     added_nodes.append(dequantize_node)
     activation_initializers.add(s_x)
-    activation_initializers.add(Z)
 
     # Replace nodes in graph
     for node in removed_nodes:
@@ -252,17 +244,15 @@ def quantize(prep_model_path, quantized_params_path, quantized_activations_path,
     # Iterate through activations, add scale and zero point
     for node_name, _ in activations.items(): # activations is 2D dictionary
         for attribute, value in activations[node_name].items():
-            if node_name + "_activation_" + attribute in activation_initializers:
-                if attribute == "scale":
+            if attribute == "scale":
+                if node_name + "_activation_scale" in activation_initializers:
                     value = np.array([value], dtype=np.float32)
-                elif attribute == "zero_point":
-                    value = np.array([value], dtype=np.int8)
 
-                attribute_initializer = numpy_helper.from_array(value, f"{node_name}_activation_{attribute}")
+                    attribute_initializer = numpy_helper.from_array(value, f"{node_name}_activation_{attribute}")
 
-                new_initializers.extend([attribute_initializer])
+                    new_initializers.extend([attribute_initializer])
 
-                print(f"Added {node_name} {attribute}={value}")
+                    print(f"Added {node_name} {attribute}={value}")
         
     graph.initializer.extend(new_initializers)
 

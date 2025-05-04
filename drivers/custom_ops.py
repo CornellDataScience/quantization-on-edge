@@ -180,17 +180,17 @@ def DynAsymmMatMulAddFusion(x, W, b, s_W, z_W):
     return (M * acc).astype(np.float32) # Return dequantized activation
   
 @onnx_op(op_type="SymmQuantize",
-         inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
+         inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
          outputs=[PyCustomOpDef.dt_int8])
-def SymmQuantize(x, s_x, Z):
+def SymmQuantize(x, s_x):
     bit_size = 8
-    return np.array(np.clip(np.round(x / s_x + Z), -2**(bit_size-1), 2**(bit_size-1) - 1), dtype=np.int8)
+    return np.array(np.clip(np.round(x / s_x), -2**(bit_size-1), 2**(bit_size-1) - 1), dtype=np.int8)
 
 @onnx_op(op_type="SymmDequantize",
-         inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_float, PyCustomOpDef.dt_int8],
+         inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_float],
          outputs=[PyCustomOpDef.dt_float])
-def SymmDequantize(x, s_x, Z):
-    return np.array(s_x * (x - Z), dtype=np.float32)
+def SymmDequantize(x, s_x):
+    return np.array(s_x * x, dtype=np.float32)
 
 @onnx_op(op_type="AsymmQuantize",
          inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_uint8],
