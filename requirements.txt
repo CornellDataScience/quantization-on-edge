@@ -57,3 +57,4 @@ ai-edge-litert
 sng4onnx
 onnx2keras
 transformers
+evaluate

@@ -43,6 +43,8 @@ model.compile(
     metrics=[tf.keras.metrics.SparseCategoricalAccuracy()],
 )
 
+model.save("models/untrained_model.keras")
+
 model.fit(
     ds_train,
     epochs=6,
