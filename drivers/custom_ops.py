@@ -102,17 +102,17 @@ def AsymmMatMulAddReLUFusion(x, W, b, s_x, s_W, s_R, z_x, z_W, z_R):
 @onnx_op(op_type="AsymmMatMulAddFusion",
          inputs=[PyCustomOpDef.dt_uint8, PyCustomOpDef.dt_uint8, PyCustomOpDef.dt_int32, 
                  PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, 
-                 PyCustomOpDef.dt_uint8, PyCustomOpDef.dt_uint8, PyCustomOpDef.dt_uint8],
+                 PyCustomOpDef.dt_uint8, PyCustomOpDef.dt_uint8],
          outputs=[PyCustomOpDef.dt_uint8])
-def AsymmMatMulAddFusion(x, W, b, s_x, s_W, s_R, z_x, z_W, z_R):
+def AsymmMatMulAddFusion(x, W, b, s_x, s_W, s_b, z_x, z_W):
     x = x.copy().astype(np.int32)
     W = W.copy().astype(np.int32)
     acc = np.matmul(x - z_x, W - z_W) + b # Matmul, Add (no ReLU)
 
     # Rescale into uint8 output
-    M = (s_x * s_W) / s_R
+    M = (s_x * s_W) / s_b
     bit_size = 8
-    return np.clip((M * acc) + z_R, 0, 2**bit_size - 1).astype(np.uint8)
+    return np.clip((M * acc), 0, 2**bit_size - 1).astype(np.uint8)
 
 @onnx_op(op_type="DynAsymmMatMulAddReLUFusion",
          inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_uint8, PyCustomOpDef.dt_float, 

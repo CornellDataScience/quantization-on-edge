@@ -37,7 +37,7 @@ def prepare(onnx_model_path, quantized_params_path, output_prep_model_path):
                 # Retrieve quantization params from JSON
                 scale = np.array([params[tensor.name]["scale"]], dtype=np.float32)
                 zero_point = np.array([params[tensor.name]["zero_point"]], dtype=np.float32)
-                quantized_data = scale * np.array(params[tensor.name]["data"], dtype=np.float32) # Use float32 to be compatible with ONNXRunTime v1.18 MatMul operator
+                quantized_data = scale * np.array(params[tensor.name]["data"] - zero_point, dtype=np.float32) # Use float32 to be compatible with ONNXRunTime v1.18 MatMul operator
                 
                 # Convert to ONNX tensors
                 quantized_initializer = numpy_helper.from_array(quantized_data, tensor.name)
@@ -506,11 +506,12 @@ def quantize_asymmetric(prep_model_path, quantized_params_path, quantized_activa
                 activation_initializers.update([s_R, z_R])
 
             else: # Node is the last matmul node before output
+                s_b = add_node.name + "_activation_scale"
                 output = "quantized_output"
 
                 fused_node = helper.make_node(name=matmul_node.name[:matmul_node.name.rindex("/") + 1] + "AsymmMatMulAddFusion",
                                               op_type="AsymmMatMulAddFusion",
-                                              inputs=[x, W, b, s_x, s_W, s_R, z_x, z_W, z_R],
+                                              inputs=[x, W, b, s_x, s_W, s_b, z_x, z_W],
                                               outputs=[output],
                                               domain="ai.onnx.contrib")
 
