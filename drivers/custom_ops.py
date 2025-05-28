@@ -205,4 +205,33 @@ def AsymmQuantize(x, s_x, Z):
 def AsymmDequantize(x, s_x, Z):
     return np.array(s_x * (x - Z), dtype=np.float32)
 
+# FIXME !!!
+@onnx_op(
+    op_type="LogQuantize",
+    inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
+    outputs=[PyCustomOpDef.dt_uint8]
+)
+def LogQuantize(x, U_x):
+    x = x.copy().astype(np.float32)
+    bit_size = 8
+
+    for i, x_i in enumerate(x):
+        if x_i == 0:
+            x[i] = 0
+        elif x_i > 0:
+            x[i] = np.clip(-np.round(np.log2(x_i/U_x)), 1, 2**(bit_size-1)-1)
+        else:
+            x[i] = -np.clip(-np.round(np.log2(np.abs(x_i)/U_x), 1, 2**(bit_size-1)))
+    
+    return x
+
+@onnx_op(
+    op_type="LogDequantize",
+    inputs=[PyCustomOpDef.dt_uint8],
+    outputs=[PyCustomOpDef.dt_float]
+)
+def LogDequantize(x):
+    x = x.copy().astype(np.float32)
+    return np.sign(x) * 2 ** (-np.abs(x))
+
 print("Custom operators registered successfully.")
