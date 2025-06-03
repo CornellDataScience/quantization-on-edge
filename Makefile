@@ -1,8 +1,12 @@
-.PHONY: all clean setup quantize_params prep_model quantize_activations quantize_biases quantize_symm quantize_asymm validate reference_model
+.PHONY: all clean setup validate reference_model \
+		quantize_params prep_model quantize_activations quantize_biases quantize_model_symm quantize_model_dyn_symm \ 
+		quantize_params_asymm prep_model_asymm quantize_activations_asymm quantize_biases_asymm quantize_model_asymm quantize_model_dyn_asymm \
+		quantize_params_log prep_model_log quantize_activations_log quantize_biases_log quantize_model_log \
+		
 
 all: setup \
-	quantize_params prep_model quantize_activations quantize_biases quantize_model_symm \
-	quantize_params_asymm prep_model_asymm quantize_activations_asymm quantize_biases_asymm quantize_model_asymm \
+	quantize_params prep_model quantize_activations quantize_biases quantize_model_symm quantize_model_dyn_symm \
+	quantize_params_asymm prep_model_asymm quantize_activations_asymm quantize_biases_asymm quantize_model_asymm quantize_model_dyn_asymm \
 	quantize_params_log prep_model_log quantize_activations_log quantize_biases_log quantize_model_log
 
 clean:
@@ -63,6 +67,7 @@ setup: models/model.keras
 quantize_params: params/unquantized_params.json
 	python3 python_implementation/quantize_parameters.py symmetric
 
+# For static symmetric:
 prep_model: params/quantized_params.json
 	python3 python_implementation/quantize_model.py prep
 
@@ -75,10 +80,15 @@ quantize_biases: activations/prep_activations.json
 quantize_model_symm: activations/quantized_activations.json biases/quantized_biases.json
 	python3 python_implementation/quantize_model.py symmetric
 
+# For dynamic symmetric:
+quantize_model_dyn_symm: params/quantized_params.json
+	python3 python_implementation/quantize_model.py dyn_symmetric
+
 # For asymmetric:
 quantize_params_asymm: params/unquantized_params.json
 	python3 python_implementation/quantize_parameters.py asymmetric
 
+# For static asymmetric:
 prep_model_asymm: params/quantized_params_asymm.json
 	python3 python_implementation/quantize_model.py prep_asymm
 
@@ -90,6 +100,10 @@ quantize_biases_asymm: activations/prep_activations_asymm.json
 
 quantize_model_asymm: activations/quantized_activations_asymm.json biases/quantized_biases_asymm.json
 	python3 python_implementation/quantize_model.py asymmetric
+
+# For dynamic asymmetric:
+quantize_model_dyn_asymm: params/quantized_params_asymm.json
+	python3 python_implementation/quantize_model.py dyn_asymmetric
 
 # For logarithmic:
 quantize_params_log: params/unquantized_params.json
@@ -108,7 +122,7 @@ quantize_model_log: activations/quantized_activations_log.json biases/quantized_
 	python3 python_implementation/quantize_model.py logarithmic
 
 # For evaluation:
-validate: models/quantized_model.onnx models/asymmetric_model.onnx
+validate: models/model.onnx models/quantized_model.onnx models/dynamic_quantized_model.onnx models/asymmetric_model.onnx models/dynamic_asymmetric_model.onnx
 	python3 drivers/validate.py
 
 reference_model: models/onnx_model.onnx
