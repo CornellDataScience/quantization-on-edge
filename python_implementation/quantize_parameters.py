@@ -4,7 +4,7 @@ from linear_quantization import linear_quantize_data, linear_quantize_data_asymm
 from logarithmic_quantization import logarithmic_quantize_data
 import sys
 
-def quantize_parameters(input_path, output_path, bit_size, is_symm, is_log):
+def quantize_parameters(input_path, output_path, bit_size=8, is_symm=True, is_log=False):
     '''
     Quantize model parameters stored in a JSON file and save the quantized parameters to another JSON file.
     Requires 'is_symm' to be True if 'is_log' is True.
@@ -72,15 +72,20 @@ if __name__ == "__main__":
 
         if mode == "symmetric":
             output_json = "params/quantized_params.json" 
-            quantize_parameters(input_json, output_json, bit_size, is_symm=True, is_log=False)
+            quantize_parameters(input_json, output_json)
             print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")
 
         elif mode == "asymmetric":
             output_json = "params/quantized_params_asymm.json"
-            quantize_parameters(input_json, output_json, bit_size, is_symm=False, is_log=False)
+            quantize_parameters(input_json, output_json, is_symm=False)
             print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")
 
         elif mode == "logarithmic":
             output_json = "params/quantized_params_log.json"
-            quantize_parameters(input_json, output_json, bit_size, is_symm=False, is_log=True)
+            quantize_parameters(input_json, output_json, is_symm=False, is_log=True)
+            print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")
+        
+        elif mode == "convolution":
+            output_json = "params/quantized_params_cnn.json" 
+            quantize_parameters(input_json, output_json)
             print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")

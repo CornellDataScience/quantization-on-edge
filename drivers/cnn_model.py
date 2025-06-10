@@ -4,4 +4,4 @@ model = InceptionV3(weights='imagenet')
 
 # print(model.summary())
 
-model.save("models/model.keras")
+model.save("models/cnn_model.keras")

@@ -83,6 +83,12 @@ if __name__ == "__main__":
             quantized_activations_path = "activations/quantized_activations_log.json"
             quantized_params_path = "params/quantized_params_log.json"
             output_quantized_biases_path = "biases/quantized_biases_log.json"
+        
+        elif mode == "convolution":
+            prep_model_path = "models/prep_cnn_model.onnx"
+            quantized_activations_path = "activations/quantized_activations_cnn.json"
+            quantized_params_path = "params/quantized_params_cnn.json"
+            output_quantized_biases_path = "biases/quantized_biases_cnn.json"
             
         quantize_biases(prep_model_path, quantized_activations_path, quantized_params_path, output_quantized_biases_path)
         print(f"Quantized {quantized_activations_path}, {quantized_params_path} -> {output_quantized_biases_path} (32-bit)")

@@ -21,6 +21,10 @@ if __name__ == "__main__":
         elif mode == "logarithmic":
             onnx_model_path = "models/prep_model_log.onnx"
             formatted_activations_file = "activations/prep_activations_log.json"
+        
+        elif mode == "convolution":
+            onnx_model_path = "models/prep_cnn_model.onnx"
+            formatted_activations_file = "activations/prep_activations_cnn.json"
 
         onnx_model = onnx.load(onnx_model_path)
         extract_activations(onnx_model, formatted_activations_file)

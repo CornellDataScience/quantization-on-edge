@@ -4,7 +4,7 @@ from linear_quantization import linear_quantize_data, linear_quantize_data_asymm
 from logarithmic_quantization import logarithmic_quantize_data
 import sys
 
-def quantize_activations(input_path, output_path, bit_size, is_symm, is_log):
+def quantize_activations(input_path, output_path, bit_size=8, is_symm=True, is_log=False):
     '''
     Quantize model activations stored in a JSON file and save the quantized activations to another JSON file.
     Requires 'is_symm' to be True if 'is_log' is True.
@@ -55,17 +55,23 @@ if __name__ == "__main__":
         if mode == "symmetric":
             input_json = "activations/prep_activations.json"
             output_json = "activations/quantized_activations.json" 
-            quantize_activations(input_json, output_json, bit_size, is_symm=True, is_log=False)
+            quantize_activations(input_json, output_json)
             print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")
 
         elif mode == "asymmetric":
             input_json = "activations/prep_activations_asymm.json"
             output_json = "activations/quantized_activations_asymm.json" 
-            quantize_activations(input_json, output_json, bit_size, is_symm=False, is_log=False)
+            quantize_activations(input_json, output_json, is_symm=False)
             print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")
 
         elif mode == "logarithmic":
             input_json = "activations/prep_activations_log.json"
             output_json = "activations/quantized_activations_log.json" 
-            quantize_activations(input_json, output_json, bit_size, is_symm=False, is_log=True)
+            quantize_activations(input_json, output_json, is_symm=False, is_log=True)
+            print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")
+
+        elif mode == "convolution":
+            input_json = "activations/prep_activations_cnn.json"
+            output_json = "activations/quantized_activations_cnn.json" 
+            quantize_activations(input_json, output_json)
             print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")

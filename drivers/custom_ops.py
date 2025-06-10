@@ -207,32 +207,33 @@ def AsymmDequantize(x, s_x, Z):
     return np.array(s_x * (x - Z), dtype=np.float32)
 
 @onnx_op(op_type="ConvBNReLUFusion",
-        inputs=[PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
+        inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int32, 
+                PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
         outputs=[PyCustomOpDef.dt_float])
-def ConvBNReLUFusion(X, W, b, scale, bias, mean, var, eps):
-    N, Cin, H, W_in = X.shape
+def ConvBNReLUFusion(x, W, b, s_x, s_W, s_R):
+    N, Cin, H, W_in = x.shape
     Cout, _, kH, kW = W.shape
     Hout = H - kH + 1
     Wout = W_in - kW + 1
 
+    bit_width = 8
+
     # Convolution
-    Y = np.zeros((N, Cout, Hout, Wout), dtype=np.float32)
+    Y = np.zeros((N, Cout, Hout, Wout), dtype=np.int32)
     for n in range(N):
         for cout in range(Cout):
-            acc = np.zeros((Hout, Wout), dtype=np.float32)
+            acc = np.zeros((Hout, Wout), dtype=np.int32)
             for cin in range(Cin):
                 acc += convolve2d(
-                    X[n, cin],            
+                    x[n, cin],            
                     W[cout, cin],         
                     mode='valid'
                 )
             Y[n, cout] = acc + b[cout]
 
-    # Batch-norm
-    invstd = 1.0 / np.sqrt(var + eps)
-    Y = (Y - mean[None,:,None,None]) * invstd[None,:,None,None] * scale[None,:,None,None] + bias[None,:,None,None]
+    M = s_x * s_W / s_R
 
     # Relu
-    return np.maximum(Y, 0.0).astype(np.float32)
+    return np.clip(M * np.maximum(Y, 0), -2**(bit_width-1), 2**(bit_width-1)-1).astype(np.int8)
 
 print("Custom operators registered successfully.")
