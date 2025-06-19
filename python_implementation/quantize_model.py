@@ -775,12 +775,13 @@ def quantize_cnn(prep_model_path, quantized_params_path, quantized_activations_p
         print()
         if i == 0:
             input_name = "quantized_input"
-            shape_initializer = node.input[1]
+            inputs = node.input
+            inputs[0] = input_name
             s_x = node.name + "_activation_scale"
             output_name = node.output[0]
-            new_head = helper.make_node(name=node.name, 
+            new_head = helper.make_node(name=node.name,
                                         op_type=node.op_type, 
-                                        inputs=[input_name, shape_initializer], 
+                                        inputs=inputs, 
                                         outputs=[output_name], 
                                         domain=node.domain)
             
