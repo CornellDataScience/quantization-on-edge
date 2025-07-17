@@ -29,7 +29,7 @@ opt_einsum==3.4.0
 optree==0.14.1
 packaging==24.2
 pillow==11.1.0
-protobuf==3.20.3
+protobuf>=4.25.8
 Pygments==2.19.1
 pyparsing==3.2.1
 python-dateutil==2.9.0.post0

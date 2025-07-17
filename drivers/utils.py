@@ -8,27 +8,34 @@ from onnxruntime.quantization import CalibrationDataReader
 import json
 import numpy as np
 
-class MnistCalibrationDataReader(CalibrationDataReader):
+class CustomCalibrationDataReader(CalibrationDataReader):
     '''
-    Create custom CalibrationDataReader for MNIST dataset
+    Create custom CalibrationDataReader for a specified dataset
 
     Input
     -----
+    dataset_name: name of the TensorFlow dataset
+    input_layer_name: name of the input layer
     num: number of training examples to calibrate on
     
     Output
     -----
-    Returns MnistCalibrationDataReader object
+    Returns CustomCalibrationDataReader object
     '''
-    def __init__(self, input_layer_name, num):
+    def __init__(self, dataset_name, input_layer_name, num):
         super().__init__()
 
         self.input_layer_name = input_layer_name
 
         # Load dataset and extract `num` training examples
-        dataset = tfds.load("mnist", shuffle_files=True)
-        dataset_subset = dataset["train"].take(num)
+        dataset = tfds.load(dataset_name, shuffle_files=True, split="test")
+        # dataset_subset = dataset["train"].take(num)
+        dataset_subset = dataset.take(num)
+        
         self.calibration_images = [np.array(item["image"]) for item in dataset_subset]
+
+
+        # print(np.array(self.calibration_images[0]).shape)
 
         self.current_item = 0
 
@@ -40,7 +47,8 @@ class MnistCalibrationDataReader(CalibrationDataReader):
             return None  # None signals that the calibration is finished
 
         image = self.calibration_images[self.current_item]
-        image = np.reshape(image, (1, 28, 28))
+        # image = np.reshape(image, (1, 299, 299, 3))
+        image = np.expand_dims(image, axis=0)
         image = image.astype("float32")
 
         self.current_item += 1
@@ -139,8 +147,9 @@ def extract_activations(onnx_model, output_path):
 
     input_layer_name = onnx_model.graph.input[0].name
 
-    num_samples = 1000
-    reader = MnistCalibrationDataReader(input_layer_name, num_samples)
+    num_samples = 10
+    dataset_name = "imagenet_v2"
+    reader = CustomCalibrationDataReader(dataset_name, input_layer_name, num_samples)
     for _ in range(len(reader)):
         sample = reader.get_next()
         if sample is None:

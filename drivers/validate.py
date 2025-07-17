@@ -28,6 +28,7 @@ def test(onnx_model, inference_session, dataset_name, num_samples):
 
     num_samples = num_samples if num_samples else len(dataset["test"])
     test_set = dataset["test"].take(num_samples)
+    test_set = [sample for sample in test_set if sample["image"].shape[1] <= 100]
 
     num_correct = 0
     total_time = 0
@@ -35,7 +36,11 @@ def test(onnx_model, inference_session, dataset_name, num_samples):
     for sample in test_set:
         label = int(sample["label"])
         image = np.array(sample["image"])
-        image = np.reshape(image, (1, image.shape[0], image.shape[1])).astype(np.float32)
+        # image = np.reshape(image, (1, image.shape[0], image.shape[1])).astype(np.float32)
+        # image = np.transpose(image)
+        print(image.shape)
+        image = np.expand_dims(image, axis=2).astype(np.float32)
+        print(image.shape)
 
         input = {f"{input_layer_name}": image}
 
@@ -80,20 +85,28 @@ def create_inference_session(onnx_model_path, hasCustom=True):
     return onnx_model, session
 
 if __name__ == "__main__":
-    dataset_name = "mnist"
+    dataset_name = "imagenet_v2"
     num_samples = None
 
     # Unquantized
     onnx_model_path = "models/model.onnx"
+    onnx_model = onnx.load(onnx_model_path)
 
-    model_size = os.path.getsize(onnx_model_path)
-    model, session = create_inference_session(onnx_model_path, hasCustom=False)
-    accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
+    print('** nodes **')
+    for node in onnx_model.graph.node:
+        if node.op_type == "MaxPool" or node.op_type == "AveragePool":
+            print("name=%r type=%r input=%r output=%r kernel_shape=%r" % (
+                node.name, node.op_type, node.input, node.output, node.attribute))
+            
 
-    print("** BASELINE **")
-    print(f"Unquantized model size: {model_size} bytes")
-    print(f"Unquantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
-    print(f"Unquantized average time: {avg_time:.4f} ms")
+    # model_size = os.path.getsize(onnx_model_path)
+    # model, session = create_inference_session(onnx_model_path, hasCustom=False)
+    # accuracy, num_samples, avg_time = test(model, session, dataset_name, num_samples)
+
+    # print("** BASELINE **")
+    # print(f"Unquantized model size: {model_size} bytes")
+    # print(f"Unquantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
+    # print(f"Unquantized average time: {avg_time:.4f} ms")
 
     # onnx_model_path = "models/cnn_model.onnx"
 
@@ -136,6 +149,12 @@ if __name__ == "__main__":
 
     # Quantized(symmetric convolution)
     onnx_model_path = "models/quantized_cnn_model.onnx"
+    onnx_model = onnx.load(onnx_model_path)
+
+    print('** nodes **')
+    for node in onnx_model.graph.node:
+        print("name=%r type=%r input=%r output=%r" % (
+            node.name, node.op_type, node.input, node.output))
 
     model_size = os.path.getsize(onnx_model_path)
     model, session = create_inference_session(onnx_model_path)
@@ -146,7 +165,7 @@ if __name__ == "__main__":
     print(f"Quantized accuracy: {accuracy * 100:.2f}% on {num_samples} samples")
     print(f"Quantized average time: {avg_time:.4f} ms")
 
-    print()
+    # print()
 
 
     # print("** ASYMMETRIC **")

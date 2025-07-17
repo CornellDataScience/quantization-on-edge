@@ -209,31 +209,62 @@ def AsymmDequantize(x, s_x, Z):
 @onnx_op(op_type="ConvBNReLUFusion",
         inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int32, 
                 PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
-        outputs=[PyCustomOpDef.dt_float])
-def ConvBNReLUFusion(x, W, b, s_x, s_W, s_R):
-    N, Cin, H, W_in = x.shape
+        outputs=[PyCustomOpDef.dt_int8],
+        attrs={"strides": PyCustomOpDef.dt_int64, "auto_pad": PyCustomOpDef.dt_bool}) # MaxPool input=float
+def ConvBNReLUFusion(x, W, b, s_x, s_W, s_R, **kwargs):
+    print(x.shape)
+    Cin, N, H, W_in = x.shape # N = batch size
     Cout, _, kH, kW = W.shape
     Hout = H - kH + 1
     Wout = W_in - kW + 1
 
+    print("="*20)
+    print(Cin, N, H, W_in)
+    print(Cout, kH, kW)
+    print("="*20)
+
     bit_width = 8
 
+    strides = kwargs["strides"]
+    if strides == 1:
+        mode = "same"
+    else:
+        mode = "valid"
+        # Padding
+        # output_shape[i] = ceil(input_shape[i] / strides[i])
+
+        # assume SAME_UPPER
+        h_padding = np.ceil(H / strides) - H
+        h_top = np.floor(h_padding / 2)
+        h_bottom = np.ceil(h_padding / 2)
+        w_padding = np.ceil(W_in / strides) - H
+        w_left = np.floor(w_padding / 2)
+        w_right = np.ceil(w_padding / 2)
+
+        
+
     # Convolution
-    Y = np.zeros((N, Cout, Hout, Wout), dtype=np.int32)
+    # print('A')
+    Y = np.zeros((Cout, N, Hout, Wout), dtype=np.int32)
     for n in range(N):
         for cout in range(Cout):
+            # print('B')
             acc = np.zeros((Hout, Wout), dtype=np.int32)
             for cin in range(Cin):
                 acc += convolve2d(
-                    x[n, cin],            
+                    x[cin, n, :, :],            
                     W[cout, cin],         
-                    mode='valid'
+                    mode=mode
                 )
-            Y[n, cout] = acc + b[cout]
+            # print('C')
+            Y[cout, n] = acc + b[cout]
 
     M = s_x * s_W / s_R
 
     # Relu
-    return np.clip(M * np.maximum(Y, 0), -2**(bit_width-1), 2**(bit_width-1)-1).astype(np.int8)
+    result = np.clip(M * np.maximum(Y, 0), -2**(bit_width-1), 2**(bit_width-1)-1).astype(np.int8)
+
+    print(result.shape)
+    return result
 
 print("Custom operators registered successfully.")

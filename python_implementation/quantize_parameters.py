@@ -4,7 +4,7 @@ from linear_quantization import linear_quantize_data, linear_quantize_data_asymm
 from logarithmic_quantization import logarithmic_quantize_data
 import sys
 
-def quantize_parameters(input_path, output_path, bit_size=8, is_symm=True, is_log=False):
+def quantize_parameters(input_path, output_path, bit_size=8, is_symm=True, is_log=False, is_cnn=False):
     '''
     Quantize model parameters stored in a JSON file and save the quantized parameters to another JSON file.
     Requires 'is_symm' to be True if 'is_log' is True.
@@ -29,7 +29,8 @@ def quantize_parameters(input_path, output_path, bit_size=8, is_symm=True, is_lo
     for param_name, param_value in params.items():
         param_array = np.array(param_value, dtype=np.float32)
         
-        if "ReadVariableOp" in param_name and ("MatMul" in param_name or "Cast" in param_name): # Only quantize weights
+        if ("ReadVariableOp" in param_name and ("MatMul" in param_name or "Cast" in param_name)) or \
+            (is_cnn and "weights" in param_name): # Only quantize weights
             if is_symm: # symmetric
                 Q, S, Z = linear_quantize_data(param_array, bit_size)
                 
@@ -87,5 +88,5 @@ if __name__ == "__main__":
         
         elif mode == "convolution":
             output_json = "params/quantized_params_cnn.json" 
-            quantize_parameters(input_json, output_json)
+            quantize_parameters(input_json, output_json, is_cnn=True)
             print(f"Quantized {input_json} -> {output_json} ({bit_size}-bit)")

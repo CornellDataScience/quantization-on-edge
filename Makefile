@@ -5,8 +5,8 @@
 # quantize_params_log prep_model_log quantize_activations_log quantize_biases_log quantize_model_log
 		
 all: setup \
-	quantize_params prep_model quantize_activations quantize_biases quantize_model_symm quantize_model_dyn_symm \
-	quantize_params_asymm prep_model_asymm quantize_activations_asymm quantize_biases_asymm quantize_model_asymm quantize_model_dyn_asymm \
+	# quantize_params prep_model quantize_activations quantize_biases quantize_model_symm quantize_model_dyn_symm
+# quantize_params_asymm prep_model_asymm quantize_activations_asymm quantize_biases_asymm quantize_model_asymm quantize_model_dyn_asymm 
 	quantize_params_cnn prep_cnn_model quantize_activations_cnn quantize_biases_cnn quantize_cnn_model
 # quantize_params_log prep_model_log quantize_activations_log quantize_biases_log quantize_model_log
 
@@ -20,6 +20,9 @@ clean:
 ## Create dependencies if missing
 models/model.keras:
 	python3 drivers/model.py
+
+models/cnn_model.keras:
+	python3 drivers/cnn_model.py
 
 params/unquantized_params.json:
 	python3 drivers/setup.py
@@ -73,7 +76,7 @@ biases/quantized_biases_cnn.json:
 	python3 python_implementation/quantize_biases.py convolution
 
 ## Functional commands
-setup: models/model.keras
+setup: models/cnn_model.keras
 	python3 drivers/setup.py
 
 # For symmetric:
@@ -141,7 +144,7 @@ quantize_params_cnn: params/unquantized_params.json
 prep_cnn_model:
 	python3 python_implementation/quantize_model.py prep_cnn
 
-quantize_activations_cnn:
+quantize_activations_cnn: activations/prep_activations_cnn.json
 	python3 python_implementation/quantize_activations.py convolution
 
 quantize_biases_cnn:
@@ -151,7 +154,7 @@ quantize_cnn_model:
 	python3 python_implementation/quantize_model.py cnn_symmetric
 
 # For evaluation:
-validate: models/model.onnx models/quantized_model.onnx models/dynamic_quantized_model.onnx models/asymmetric_model.onnx models/dynamic_asymmetric_model.onnx models/quantized_cnn_model.onnx
+validate: models/model.onnx models/quantized_cnn_model.onnx #models/model.onnx models/quantized_model.onnx models/dynamic_quantized_model.onnx models/asymmetric_model.onnx models/dynamic_asymmetric_model.onnx models/quantized_cnn_model.onnx
 	python3 drivers/validate.py
 
 reference_model: models/onnx_model.onnx

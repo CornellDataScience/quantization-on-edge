@@ -695,10 +695,10 @@ def quantize_cnn(prep_model_path, quantized_params_path, quantized_activations_p
     model = onnx.load(prep_model_path)
     graph = model.graph
 
-    print('** Original nodes **')
-    for node in model.graph.node:
-        print("name=%r type=%r input=%r output=%r" % (
-            node.name, node.op_type, node.input, node.output))
+    # print('** Original nodes **')
+    # for node in model.graph.node:
+    #     print("name=%r type=%r input=%r output=%r" % (
+    #         node.name, node.op_type, node.input, node.output))
         
     new_initializers = []
         
@@ -770,8 +770,8 @@ def quantize_cnn(prep_model_path, quantized_params_path, quantized_activations_p
     
     for i,node in enumerate(graph_nodes):
         print(node.name)
-        print([node.name for node in added_nodes])
-        print([node.name for node in removed_nodes])
+        # print([node.name for node in added_nodes])
+        # print([node.name for node in removed_nodes])
         print()
         if i == 0:
             input_name = "quantized_input"
@@ -790,7 +790,7 @@ def quantize_cnn(prep_model_path, quantized_params_path, quantized_activations_p
 
             activation_initializers.add(s_x)
             
-        if node.op_type == "Conv":
+        elif node.op_type == "Conv":
             conv_node = node
             relu_node = graph_nodes[i + 1]
 
@@ -801,6 +801,14 @@ def quantize_cnn(prep_model_path, quantized_params_path, quantized_activations_p
             s_W = W + "_scale"
             s_R = relu_node.name + "_activation_scale"
             output = relu_node.output[0]
+
+            attributes = []
+            if len(node.attribute) == 3:
+                attributes.append(helper.make_attribute("auto_pad", True))
+            else:
+                attributes.append(helper.make_attribute("auto_pad", False))
+
+            attributes.append(helper.make_attribute(node.attribute[0].name, node.attribute[0].ints[0]))
             
             conv_relu_fused_node = helper.make_node(name=conv_node.name[:conv_node.name.rindex("/") + 1] + "ConvBNReLUFusion", 
                                                     op_type="ConvBNReLUFusion", 
@@ -810,10 +818,68 @@ def quantize_cnn(prep_model_path, quantized_params_path, quantized_activations_p
             added_nodes.append(conv_relu_fused_node)
             removed_nodes.extend([conv_node, relu_node])
 
+            conv_relu_fused_node.attribute.extend(attributes)
+
             activation_initializers.add(s_R)
 
-        if node.op_type != "Reshape":
+        elif node.op_type == "MaxPool" or node.op_type == "AveragePool":
+            prev_node = graph_nodes[i - 1]
+            s_x = prev_node.name + "_activation_scale"
+
+            dq_input_name = node.input[0]
+            dq_output_name = node.input[0] + "_input_dequantized"
+
+            q_input_name = node.output[0] + "_output_dequantized"
+            q_output_name = node.output[0]
+
+            dequantize_node = helper.make_node(name=node.name + "_DequantizeLayer", 
+                                    op_type="SymmDequantize", 
+                                    inputs=[dq_input_name, s_x], 
+                                    outputs=[dq_output_name], 
+                                    domain="ai.onnx.contrib")
+
+            print(type(node.attribute))
+            print(type(node.attribute[0]))
+
+            attributes = []
+            for att in node.attribute:
+                if att.name == "auto_pad":
+                    attributes.append(helper.make_attribute(att.name, att.s))
+                else:
+                    attributes.append(helper.make_attribute(att.name, att.ints))
+
+            new_pool_node = helper.make_node(name=node.name, 
+                                    op_type=node.op_type, 
+                                    inputs=[dq_output_name], 
+                                    outputs=[q_input_name])
+            
+            new_pool_node.attribute.extend(attributes)
+
+            quantize_node = helper.make_node(name=node.name + "_QuantizeLayer", 
+                                    op_type="SymmQuantize", 
+                                    inputs=[q_input_name, s_x], 
+                                    outputs=[q_output_name], 
+                                    domain="ai.onnx.contrib")
+            
+            added_nodes.extend([dequantize_node, new_pool_node, quantize_node])
+            removed_nodes.append(node)
+
+            # FIXME update activation initializers???
+
+        elif i == len(graph_nodes) - 1:
+            output_name = "quantized_output"
+
+            transpose_node = helper.make_node(name=node.name,
+                                            op_type=node.op_type,
+                                            inputs=node.input,
+                                            outputs=[output_name])
+
+            added_nodes.append(transpose_node)
+            removed_nodes.append(node)
+
+        elif node.op_type != "Reshape":
             prev_node = node
+            activation_initializers.add(node.name + "_activation_scale")
 
     # Add node to dequantize model output
     input_name = "quantized_output"
@@ -855,10 +921,10 @@ def quantize_cnn(prep_model_path, quantized_params_path, quantized_activations_p
         
     graph.initializer.extend(new_initializers)
 
-    print('** Quantized nodes **')
-    for node in model.graph.node:
-        print("name=%r type=%r input=%r output=%r" % (
-            node.name, node.op_type, node.input, node.output))
+    # print('** Quantized nodes **')
+    # for node in model.graph.node:
+    #     print("name=%r type=%r input=%r output=%r" % (
+    #         node.name, node.op_type, node.input, node.output))
         
     model = helper.make_model(graph, opset_imports=[
         helper.make_opsetid('', 13), helper.make_opsetid("ai.onnx.contrib", 1)])
