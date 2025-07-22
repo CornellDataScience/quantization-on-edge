@@ -226,29 +226,33 @@ def ConvBNReLUFusion(x, W, b, s_x, s_W, s_R, **kwargs):
     bit_width = 8
 
     strides = kwargs["strides"]
-    if strides == 1:
-        mode = "same"
-    else:
-        mode = "valid"
-        # Padding
-        # output_shape[i] = ceil(input_shape[i] / strides[i])
+    auto_pad = kwargs["auto_pad"]
+    if auto_pad:
+        if strides == 1:
+            mode = "same"
+        else:
+            mode = "valid"
+            # Padding (assume SAME_UPPER)
+            h_padding = np.ceil(H / strides) - H
+            h_top = np.floor(h_padding / 2)
+            h_bottom = np.ceil(h_padding / 2)
 
-        # assume SAME_UPPER
-        h_padding = np.ceil(H / strides) - H
-        h_top = np.floor(h_padding / 2)
-        h_bottom = np.ceil(h_padding / 2)
-        w_padding = np.ceil(W_in / strides) - H
-        w_left = np.floor(w_padding / 2)
-        w_right = np.ceil(w_padding / 2)
-
-        
+            w_padding = np.ceil(W_in / strides) - H
+            w_left = np.floor(w_padding / 2)
+            w_right = np.ceil(w_padding / 2)
+            
+            pad_width = (
+                (0, 0), # no padding for Cin axis
+                (0, 0), # no padding for N axis
+                (int(h_top), int(h_bottom)),
+                (int(w_left), int(w_right))
+            )
+            x = np.pad(x, pad_width=pad_width, mode='constant', constant_values=0)
 
     # Convolution
-    # print('A')
     Y = np.zeros((Cout, N, Hout, Wout), dtype=np.int32)
     for n in range(N):
         for cout in range(Cout):
-            # print('B')
             acc = np.zeros((Hout, Wout), dtype=np.int32)
             for cin in range(Cin):
                 acc += convolve2d(
@@ -256,7 +260,6 @@ def ConvBNReLUFusion(x, W, b, s_x, s_W, s_R, **kwargs):
                     W[cout, cin],         
                     mode=mode
                 )
-            # print('C')
             Y[cout, n] = acc + b[cout]
 
     M = s_x * s_W / s_R

@@ -803,10 +803,10 @@ def quantize_cnn(prep_model_path, quantized_params_path, quantized_activations_p
             output = relu_node.output[0]
 
             attributes = []
-            if len(node.attribute) == 3:
+            if len(node.attribute) == 3: # strides, kernel_size, auto_pad
                 attributes.append(helper.make_attribute("auto_pad", True))
             else:
-                attributes.append(helper.make_attribute("auto_pad", False))
+                attributes.append(helper.make_attribute("auto_pad", False)) # 'NOTSET'
 
             attributes.append(helper.make_attribute(node.attribute[0].name, node.attribute[0].ints[0]))
             
