@@ -15,8 +15,8 @@ Create quantized model from scratch: `make`
 3. Create calibration prep model: `make prep_model`
 4. Calculate quantized activations: `make quantize_activations`
 5. Calculate quantized biases: `make quantize_biases`
-3. Statically quantize model: `make quantize_model_symm`
-3. Dynamically quantize model: `make quantize_model_dyn_symm`
+6. Statically quantize model: `make quantize_model_symm`
+7. Dynamically quantize model: `make quantize_model_dyn_symm`
 
 ### Quantize Asymmetric from Scratch
 
@@ -25,8 +25,17 @@ Create quantized model from scratch: `make`
 3. Create calibration prep model: `make prep_model_asymm`
 4. Calculate quantized activations: `make quantize_activations_asymm`
 5. Calculate quantized biases: `make quantize_biases_asymm`
-3. Statically quantize model: `make quantize_model_asymm`
-3. Dynamically quantize model: `make quantize_model_dyn_asymm`
+6. Statically quantize model: `make quantize_model_asymm`
+7. Dynamically quantize model: `make quantize_model_dyn_asymm`
+
+### Quantize CNN from Scratch
+
+1. Extract unquantized parameters: `make setup`
+2. Calculate quantized parameters: `make quantize_params_cnn`
+3. Create calibration prep model: `make prep_cnn_model`
+4. Calculate quantized activations: `make quantize_activations_cnn`
+5. Calculate quantized biases: `make quantize_biases_cnn`
+6. Statically quantize model: `make quantize_cnn_model`
 
 ### Miscellaneous
 

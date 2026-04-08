@@ -1,6 +1,8 @@
 from onnxruntime_extensions import onnx_op, PyCustomOpDef
-from scipy.signal import convolve2d
+# from scipy.signal import convolve2d
 import numpy as np
+import torch.nn.functional as F
+import torch
 
 # Create and register custom ONNX operators
 @onnx_op(op_type="SymmMatMulAddReLUFusion",
@@ -210,7 +212,7 @@ def AsymmDequantize(x, s_x, Z):
         inputs=[PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int8, PyCustomOpDef.dt_int32, 
                 PyCustomOpDef.dt_float, PyCustomOpDef.dt_float, PyCustomOpDef.dt_float],
         outputs=[PyCustomOpDef.dt_int8],
-        attrs={"strides": PyCustomOpDef.dt_int64, "auto_pad": PyCustomOpDef.dt_bool}) # MaxPool input=float
+        attrs={"strides": PyCustomOpDef.dt_int64, "auto_pad": PyCustomOpDef.dt_int64}) # MaxPool input=float
 def ConvBNReLUFusion(x, W, b, s_x, s_W, s_R, **kwargs):
     print(x.shape)
     Cin, N, H, W_in = x.shape # N = batch size
@@ -227,6 +229,11 @@ def ConvBNReLUFusion(x, W, b, s_x, s_W, s_R, **kwargs):
 
     strides = kwargs["strides"]
     auto_pad = kwargs["auto_pad"]
+
+    print(f"auto_pad: {auto_pad}")
+    print(f"strides: {strides}")
+
+    mode = "valid"
     if auto_pad:
         if strides == 1:
             mode = "same"
@@ -242,32 +249,57 @@ def ConvBNReLUFusion(x, W, b, s_x, s_W, s_R, **kwargs):
             w_right = np.ceil(w_padding / 2)
             
             pad_width = (
-                (0, 0), # no padding for Cin axis
                 (0, 0), # no padding for N axis
+                (0, 0), # no padding for Cin axis
                 (int(h_top), int(h_bottom)),
                 (int(w_left), int(w_right))
             )
             x = np.pad(x, pad_width=pad_width, mode='constant', constant_values=0)
 
     # Convolution
-    Y = np.zeros((Cout, N, Hout, Wout), dtype=np.int32)
-    for n in range(N):
-        for cout in range(Cout):
-            acc = np.zeros((Hout, Wout), dtype=np.int32)
-            for cin in range(Cin):
-                acc += convolve2d(
-                    x[cin, n, :, :],            
-                    W[cout, cin],         
-                    mode=mode
-                )
-            Y[cout, n] = acc + b[cout]
+    x = np.moveaxis(x, 0, 1)
+
+    # print(x.shape)
+    Y = np.zeros((N, Cout, Hout, Wout), dtype=np.int32)
+    # for n in range(N):
+    #     for cout in range(Cout):
+            # acc = np.zeros((Hout, Wout), dtype=np.int32)
+            # for cin in range(Cin):
+            #     acc += F.conv2d(
+            #         torch.tensor(x[cin, n, :, :]),            
+            #         torch.tensor(W[cout, cin]),         
+            #         padding=mode,
+            #         stride=strides
+            #     )
+
+            # acc = F.conv2d(
+            #         torch.tensor(x),            
+            #         torch.tensor(W[cout]),         
+            #         padding=mode,
+            #         stride=strides
+            #     )
+            # acc = np.moveaxis(np.array(acc), 0, 1)
+
+            # Y[cout, n] = acc + b[cout]
+
+    Y = np.array(F.conv2d(torch.tensor(x),
+                 torch.tensor(W),
+                 torch.tensor(b),
+                 padding=mode,
+                 stride=strides
+                 ))
+    
+    Y = np.moveaxis(Y, 0, 1)
 
     M = s_x * s_W / s_R
 
     # Relu
     result = np.clip(M * np.maximum(Y, 0), -2**(bit_width-1), 2**(bit_width-1)-1).astype(np.int8)
-
+    
     print(result.shape)
     return result
+
+# TODO: concat op?? some error
+
 
 print("Custom operators registered successfully.")

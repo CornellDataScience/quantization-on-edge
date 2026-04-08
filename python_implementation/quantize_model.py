@@ -803,10 +803,19 @@ def quantize_cnn(prep_model_path, quantized_params_path, quantized_activations_p
             output = relu_node.output[0]
 
             attributes = []
-            if len(node.attribute) == 3: # strides, kernel_size, auto_pad
-                attributes.append(helper.make_attribute("auto_pad", True))
+
+            if len(node.attribute) == 5: # strides, kernel_size, auto_pad
+                # print(node.attribute)
+                # print(node.attribute[0].name)
+                # print(node.attribute[1])
+                # print(node.attribute[2])
+                attributes.append(helper.make_attribute("auto_pad", 1))
+                
+                # attributes.append(helper.make_attribute("stride", node.attribute[0][0]))
             else:
-                attributes.append(helper.make_attribute("auto_pad", False)) # 'NOTSET'
+                attributes.append(helper.make_attribute("auto_pad", 0)) # 'NOTSET'
+
+            attributes.append(helper.make_attribute("strides", node.attribute[1].ints[0]))
 
             attributes.append(helper.make_attribute(node.attribute[0].name, node.attribute[0].ints[0]))
             
@@ -837,9 +846,6 @@ def quantize_cnn(prep_model_path, quantized_params_path, quantized_activations_p
                                     inputs=[dq_input_name, s_x], 
                                     outputs=[dq_output_name], 
                                     domain="ai.onnx.contrib")
-
-            print(type(node.attribute))
-            print(type(node.attribute[0]))
 
             attributes = []
             for att in node.attribute:

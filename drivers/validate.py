@@ -39,7 +39,7 @@ def test(onnx_model, inference_session, dataset_name, num_samples):
         # image = np.reshape(image, (1, image.shape[0], image.shape[1])).astype(np.float32)
         # image = np.transpose(image)
         print(image.shape)
-        image = np.expand_dims(image, axis=2).astype(np.float32)
+        image = np.expand_dims(image, axis=2).astype(np.float32) # W, H, Cin, N -> N, Cin, H, W
         print(image.shape)
 
         input = {f"{input_layer_name}": image}
